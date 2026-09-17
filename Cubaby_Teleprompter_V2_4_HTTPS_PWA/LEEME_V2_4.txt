@@ -1,0 +1,31 @@
+CUBABY TELEPROMPTER V2.4 — SYNC VIVO V2
+
+NOVEDAD PRINCIPAL
+- Calibración por línea para usar el arreglo real de la banda.
+- Sync Vivo usa el BPM detectado para comprimir/expandir la línea de tiempo calibrada.
+- Línea -/+ reajusta la sincronización desde el punto corregido.
+
+CALIBRAR UNA CANCIÓN
+1. Selecciona una canción integrada.
+2. Ajusta su BPM de referencia.
+3. Pulsa “Calibrar canción”.
+4. Deja el audio en 0:00.
+5. Pulsa “INICIO CANCIÓN” al mismo tiempo que Play.
+6. Cada vez que comience una línea de la letra, pulsa “Marcar línea”.
+7. Al marcar la última línea, la calibración se guarda automáticamente en ese dispositivo/navegador.
+
+USAR SYNC VIVO
+1. Selecciona una canción ya calibrada.
+2. Activa Sync Vivo antes de iniciar la canción.
+3. Comienza la canción desde el principio.
+4. El primer pulso detectado ancla el inicio; cuando el BPM se estabiliza, el teleprompter entra en SYNC GUIADO.
+5. Usa Línea -/+ si el grupo hace una variación; el sistema recalcula desde ahí.
+
+IMPORTANTE
+- Las calibraciones se guardan en localStorage del navegador/dispositivo. Todavía no se sincronizan entre los teléfonos del grupo.
+- Para GitHub Pages, sube LOS ARCHIVOS QUE ESTÁN DENTRO de esta carpeta a una carpeta nueva del repositorio; evita subir otra carpeta igual dentro de ella.
+
+TRANSFERIR CALIBRACIONES
+- Exportar calib.: descarga un JSON con todas las canciones calibradas.
+- Importar calib.: carga ese JSON en otro teléfono/computadora.
+- Esto permite calibrar una vez y transferirlo a Android/iPhone mientras desarrollamos la sincronización central de banda.
