@@ -1,4 +1,4 @@
-const CACHE = "cubaby-v2.5-easy-1";
+const CACHE = "cubaby-v2.6-easy-1";
 const ASSETS = [
   "./",
   "./index.html",

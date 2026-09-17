@@ -1250,7 +1250,7 @@ svg {
       </div>
       <div class="live-meter" aria-label="Nivel de señal del micrófono"><div class="live-meter-bar" id="tele-live-meter"></div></div>
     </div>
-    <div class="text-small text-muted live-help">SYNC VIVO AUTO: selecciona una canción y el lector queda EN ESPERA. Activa Sync Vivo; cuando detecte el inicio real de la música fija ese momento como 0:00, comienza y después ajusta la velocidad al pulso. Línea −/+ corrige la posición al instante.</div>
+    <div class="text-small text-muted live-help">SYNC VIVO AUTO V2.6: activa Sync Vivo y espera a que indique LISTO. El sistema exige primero un periodo real de silencio/ambiente estable; después detecta una nueva entrada sostenida de música, fija ese momento como 0:00 y comienza. Línea −/+ corrige la posición al instante.</div>
     <div class="tele-cal-row" aria-label="Calibración avanzada" style="display:none">
       <button type="button" class="btn" id="tele-cal-prepare">Calibrar canción</button>
       <button type="button" class="btn btn-primary" id="tele-cal-start" disabled>INICIO CANCIÓN</button>
@@ -1362,6 +1362,9 @@ svg {
       let liveBaselineSamples = [];
       let liveBaselineRms = 0.006;
       let liveOnsetCandidateFrames = 0;
+      let liveQuietSince = null;
+      let liveQuietSamples = [];
+      let liveArmedAt = null;
       let liveSongStartedAt = null;
 
       // Calibración avanzada (oculta del flujo principal).
@@ -1801,8 +1804,8 @@ svg {
         liveBpmLabel.textContent = liveSmoothedBpm ? `${Math.round(liveSmoothedBpm)} BPM` : "— BPM";
         liveFactorLabel.textContent = `×${liveSpeedFactor.toFixed(2)}`;
         if (!liveSyncEnabled) liveStateLabel.textContent = "Micro apagado";
-        else if (liveStartState === "baseline") liveStateLabel.textContent = "Preparando escucha…";
-        else if (liveStartState === "armed") liveStateLabel.textContent = "EN ESPERA · inicia la canción";
+        else if (liveStartState === "baseline") liveStateLabel.textContent = "ESPERA SILENCIO…";
+        else if (liveStartState === "armed") liveStateLabel.textContent = "LISTO · inicia la canción";
         else if (liveStartState === "running" && !liveSmoothedBpm) liveStateLabel.textContent = "Inicio detectado · fijando pulso…";
         else if (liveStartState === "running") liveStateLabel.textContent = "SYNC activo";
         else liveStateLabel.textContent = "Escuchando…";
@@ -1825,6 +1828,9 @@ svg {
         liveBaselineSamples = [];
         liveBaselineRms = 0.006;
         liveOnsetCandidateFrames = 0;
+        liveQuietSince = null;
+        liveQuietSamples = [];
+        liveArmedAt = null;
         liveSongStartedAt = null;
         activeCalibration = null;
         calibratedTimelineStartMs = null;
@@ -1908,33 +1914,57 @@ svg {
         const nowMs = performance.now();
         const sensitivity = Number(liveSensitivityInput.value) / 100;
 
-        // 1) Primero aprende brevemente el nivel ambiente. Cambiar de canción reinicia esta fase.
+        // 1) No se arma por tiempo: exige primero una ventana REAL de silencio/ambiente estable.
         if (liveStartState === "baseline") {
-          liveBaselineSamples.push(rms);
-          if (nowMs - liveArmStartedAt >= 900) {
-            const sorted = liveBaselineSamples.slice().sort((a,b)=>a-b);
-            liveBaselineRms = sorted.length ? sorted[Math.floor(sorted.length * 0.55)] : 0.006;
-            liveBaselineRms = Math.max(0.0025, Math.min(0.08, liveBaselineRms));
+          const quietThreshold = 0.035 - sensitivity * 0.018; // aprox. 0.017–0.035
+          const looksQuiet = rms <= quietThreshold;
+
+          if (looksQuiet) {
+            if (liveQuietSince == null) liveQuietSince = nowMs;
+            liveQuietSamples.push(rms);
+            if (liveQuietSamples.length > 120) liveQuietSamples.shift();
+          } else {
+            // Cualquier señal clara reinicia la ventana de silencio.
+            liveQuietSince = null;
+            liveQuietSamples = [];
+          }
+
+          if (liveQuietSince != null && nowMs - liveQuietSince >= 900 && liveQuietSamples.length >= 20) {
+            const sorted = liveQuietSamples.slice().sort((a,b)=>a-b);
+            liveBaselineRms = sorted[Math.floor(sorted.length * 0.60)] || 0.006;
+            liveBaselineRms = Math.max(0.0025, Math.min(0.035, liveBaselineRms));
             liveStartState = "armed";
+            liveArmedAt = nowMs;
             liveOnsetCandidateFrames = 0;
             liveFluxHistory = [];
             liveEnergyHistory = [];
             liveBeatTimes = [];
             livePrevSpectrum.fill(0);
-            status.textContent = `EN ESPERA · ${songs[currentIndex].title}. Inicia la canción cuando quieras; el lector no se moverá antes.`;
+            status.textContent = `LISTO · ${songs[currentIndex].title}. Ahora inicia la canción; el lector sigue detenido hasta detectar una entrada nueva de música.`;
             updateLiveDisplay();
+          } else {
+            status.textContent = `ESPERA SILENCIO · ${songs[currentIndex].title}. Mantén la música detenida hasta que aparezca LISTO.`;
           }
+
           liveFrameId = requestAnimationFrame(liveAudioLoop);
           return;
         }
 
-        // 2) Espera una subida sostenida respecto al ambiente: ese evento fija el 0:00.
+        // 2) Ya armado, acepta SOLO una nueva entrada sostenida y claramente superior al ambiente.
         if (liveStartState === "armed") {
-          const multiplier = 2.8 - sensitivity * 1.15;
-          const onsetThreshold = Math.max(0.010, liveBaselineRms * multiplier);
-          const strongSignal = rms >= onsetThreshold || (rms >= liveBaselineRms * 1.55 && energy > 0.045);
-          liveOnsetCandidateFrames = strongSignal ? liveOnsetCandidateFrames + 1 : Math.max(0, liveOnsetCandidateFrames - 1);
-          if (liveOnsetCandidateFrames >= 3) {
+          const minArmDelay = 250;
+          const multiplier = 3.2 - sensitivity * 1.0;
+          const onsetThreshold = Math.max(0.024, liveBaselineRms * multiplier);
+          const riseEnough = rms >= onsetThreshold;
+          const spectralEnough = energy > 0.055 && rms >= Math.max(0.018, liveBaselineRms * 1.8);
+          const strongSignal = (riseEnough || spectralEnough) && (liveArmedAt == null || nowMs - liveArmedAt >= minArmDelay);
+
+          liveOnsetCandidateFrames = strongSignal
+            ? liveOnsetCandidateFrames + 1
+            : Math.max(0, liveOnsetCandidateFrames - 2);
+
+          // ~6 frames sostenidos evita que un clic, voz corta o golpe aislado dispare el lector.
+          if (liveOnsetCandidateFrames >= 6) {
             liveStartState = "running";
             liveSongStartedAt = nowMs;
             liveFirstPulseAt = nowMs;
@@ -1950,6 +1980,7 @@ svg {
             updateLiveDisplay();
             if (!playing && lyricLines.length >= 3) startNow();
           }
+
           liveFrameId = requestAnimationFrame(liveAudioLoop);
           return;
         }
@@ -1999,13 +2030,13 @@ svg {
           livePrevSpectrum = new Float32Array(liveAnalyser.frequencyBinCount);
           liveSource.connect(liveAnalyser); // No se conecta a destination: evita feedback.
           liveSyncEnabled = true;
-          liveSyncButton.textContent = "Sync vivo: EN ESPERA";
+          liveSyncButton.textContent = "Sync vivo: armado";
           liveSyncButton.setAttribute("aria-pressed", "true");
           armLiveForCurrentSong(false);
           liveFrameId = requestAnimationFrame(liveAudioLoop);
           status.textContent = lyricLines.length < 3
             ? "SYNC VIVO activado, pero esta canción todavía no tiene letra suficiente para desplazarse."
-            : `SYNC VIVO activado para ${songs[currentIndex].title}. Espera un instante y después inicia la música; el lector permanecerá quieto hasta detectar una nueva entrada.`;
+            : `SYNC VIVO activado para ${songs[currentIndex].title}. Mantén la música detenida hasta que aparezca LISTO; después inicia la canción.`;
           requestWakeLock();
         } catch (error) {
           stopLiveSync(false);
@@ -2040,6 +2071,9 @@ svg {
         liveStartState = "idle";
         liveBaselineSamples = [];
         liveOnsetCandidateFrames = 0;
+        liveQuietSince = null;
+        liveQuietSamples = [];
+        liveArmedAt = null;
         liveSongStartedAt = null;
         activeCalibration = null;
         calibratedTimelineStartMs = null;
@@ -2112,7 +2146,7 @@ svg {
         updateCalibrationDisplay();
         if (liveSyncEnabled) {
           armLiveForCurrentSong(false);
-          liveSyncButton.textContent = "Sync vivo: EN ESPERA";
+          liveSyncButton.textContent = "Sync vivo: armado";
           status.textContent = `Canción ${song.number} de ${songs.length} cargada. EN ESPERA: inicia la música cuando quieras.`;
         } else {
           status.textContent = `Canción ${song.number} de ${songs.length} cargada. No iniciará hasta que pulses Iniciar o actives Sync Vivo.`;
