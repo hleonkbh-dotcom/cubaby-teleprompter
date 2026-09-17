@@ -1,0 +1,11 @@
+{
+  "name": "Cubaby Teleprompter",
+  "short_name": "Cubaby",
+  "description": "Teleprompter musical para ensayos y presentaciones con Sync Vivo, BPM y cues.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#0b1220",
+  "theme_color": "#0b1220"
+}
