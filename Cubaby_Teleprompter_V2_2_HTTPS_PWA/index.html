@@ -1,0 +1,2370 @@
+<!doctype html>
+<html lang="es" data-visualize-standalone>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Cubaby Teleprompter V2.2</title>
+<style>:root {
+  color-scheme: light dark;
+  background-color: transparent !important;
+
+  /* Agent-facing contract; keep in sync with SKILL.md. */
+  --background: var(
+    --main-surface-primary,
+    light-dark(rgb(255 255 255), rgb(24 24 24))
+  );
+  --foreground: light-dark(rgb(26 28 31), rgb(255 255 255));
+  --card: color-mix(in oklab, var(--foreground) 5%, transparent);
+  --card-foreground: var(--foreground);
+  --popover: light-dark(rgb(255 255 255), rgb(45 45 45));
+  --popover-foreground: var(--foreground);
+  --primary: light-dark(rgb(51 156 255), rgb(131 195 255));
+  --primary-foreground: light-dark(rgb(255 255 255), rgb(13 13 13));
+  --secondary: light-dark(rgb(255 255 255 / 96%), rgb(54 54 54 / 96%));
+  --secondary-foreground: var(--foreground);
+  --muted: color-mix(in srgb, var(--foreground) 10%, transparent);
+  --muted-foreground: light-dark(
+    rgb(26 28 31 / 49.4%),
+    rgb(255 255 255 / 49.8%)
+  );
+  --accent: light-dark(rgb(229 242 255), rgb(13 39 63));
+  --accent-foreground: var(--primary);
+  --destructive: light-dark(rgb(226 85 7), rgb(255 133 73));
+  --border: light-dark(rgb(26 28 31 / 8%), rgb(255 255 255 / 8.2%));
+  --input: light-dark(
+    rgb(26 28 31 / 11.8%),
+    color-mix(in oklab, rgb(0 0 0) 10%, transparent)
+  );
+  --ring: light-dark(rgb(51 156 255), rgb(131 195 255 / 76%));
+  --font-size-base: 14px;
+  --red: light-dark(rgb(186 38 35), rgb(250 66 62));
+  --green: light-dark(rgb(0 162 64), rgb(64 201 119));
+
+  /* Internal implementation variables; not part of the agent contract. */
+  --font-sans: -apple-system, system-ui, "Segoe UI", sans-serif;
+  --font-mono:
+    ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono",
+    monospace;
+  --font-size-normal: max(11px, var(--font-size-base));
+  --font-size-tooltip: calc(var(--font-size-base) - 1px);
+  --font-size-small: max(11px, calc(var(--font-size-base) - 2px));
+  --font-size-h1: calc(var(--font-size-normal) * 1.7142857143);
+  --font-size-h2: calc(var(--font-size-normal) * 1.4285714286);
+  --font-size-h3: calc(var(--font-size-normal) * 1.2857142857);
+  --font-weight-normal: 430;
+  --font-weight-medium: 500;
+  --line-height-normal: calc(var(--font-size-normal) * 1.5);
+  --line-height-tooltip: calc(var(--font-size-tooltip) * 1.4285714286);
+  --line-height-small: calc(var(--font-size-small) + 4px);
+  --radius: 10px;
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-2xl: calc(var(--radius) * 1.6);
+  --radius-full: 9999px;
+  --shadow-sm: 0 1px 2px -1px rgb(0 0 0 / 8%);
+  --checkmark-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 17 17'%3E%3Cpath d='M12.8961 3.64101C13.1297 3.41418 13.4984 3.37523 13.7779 3.56581C14.0571 3.75635 14.1554 4.11331 14.0299 4.41347L13.9615 4.53847L7.71151 13.7045C7.59411 13.8767 7.4063 13.9877 7.19881 14.0072C6.99136 14.0267 6.78564 13.9533 6.63826 13.806L2.88826 10.056L2.79842 9.9457C2.6192 9.67407 2.64927 9.30496 2.88826 9.06581C3.12738 8.82669 3.49647 8.79676 3.76815 8.97597L3.8785 9.06581L7.03084 12.2182L12.8053 3.74941L12.8961 3.64101Z'/%3E%3C/svg%3E");
+
+  /* Legacy aliases; not part of the current agent contract. */
+  --viz-bg: transparent;
+  --viz-panel: var(--card);
+  --viz-border: var(--border);
+  --viz-text: var(--foreground);
+  --viz-muted: var(--muted-foreground);
+  --viz-accent: var(--primary);
+  --viz-accent-text: var(--primary-foreground);
+  --viz-accent-bg: var(--accent);
+  --viz-font-size: var(--font-size-base);
+  --viz-warning: var(--destructive);
+  --color-background-primary: var(--background);
+  --color-text-primary: var(--foreground);
+  --color-border-secondary: var(--border);
+}
+
+:root[data-visualize-standalone] {
+  background-color: var(--background) !important;
+}
+
+/* Generic mobile code-block hosts provide light/dark mode but no series palette.
+   AppBlock hosts set all six variables themselves. */
+:root:not([data-app-block-surface]) {
+  --viz-series-1: var(--primary);
+  --viz-series-2: light-dark(#f3883b, #f59a56);
+  --viz-series-3: light-dark(#5dc977, #74d58b);
+  --viz-series-4: light-dark(#eb77b1, #f08fc0);
+  --viz-series-5: light-dark(#9b79ec, #aa91ef);
+  --viz-series-6: light-dark(#3ab9b1, #5acbc2);
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html > body {
+  margin: 0;
+  padding: 5px;
+  color: var(--foreground);
+  background: transparent !important;
+  font-family: var(--font-sans);
+  font-size: var(--font-size-normal);
+  font-weight: var(--font-weight-normal);
+  line-height: var(--line-height-normal);
+}
+
+:root:not([data-app-block-surface]) > body {
+  padding: 12px;
+}
+
+a {
+  color: color-mix(in srgb, var(--viz-accent) 80%, var(--viz-text) 20%);
+  cursor: pointer;
+  font-weight: var(--font-weight-medium);
+  text-decoration: none;
+  text-underline-offset: 2px;
+}
+
+a:is(:hover, :focus-visible) {
+  text-decoration-line: underline;
+  text-decoration-style: dashed;
+  text-decoration-thickness: 0.5px;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+p {
+  margin-block: 0;
+}
+
+h1 {
+  font-size: var(--font-size-h1);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.25;
+}
+
+h2 {
+  font-size: var(--font-size-h2);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.25;
+}
+
+h3,
+h4,
+h5,
+h6 {
+  font-size: var(--font-size-h3);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.3;
+}
+
+b,
+strong,
+th {
+  font-weight: var(--font-weight-medium);
+}
+
+code:not(pre code) {
+  display: inline;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  overflow-wrap: anywhere;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+  word-break: break-word;
+}
+
+.table-responsive {
+  width: 100%;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  color: var(--foreground);
+  font: inherit;
+  text-align: start;
+}
+
+.table :is(th, td) {
+  padding-block: 10px;
+  padding-inline: 0 24px;
+  overflow-wrap: anywhere;
+  border-bottom: 1px solid var(--border);
+  text-align: start;
+  vertical-align: top;
+}
+
+.table-responsive > .table :is(th, td) {
+  overflow-wrap: break-word;
+}
+
+.table :is(th, td):last-child {
+  padding-inline-end: 0;
+}
+
+.table :is(caption, thead th) {
+  font-weight: 600;
+}
+
+.table thead th {
+  padding-block: 8px;
+  border-bottom-color: color-mix(in srgb, var(--foreground) 16%, transparent);
+}
+
+.table tbody tr:last-child :is(th, td) {
+  border-bottom: 0;
+}
+
+.table.table-sm :is(th, td) {
+  padding-block: 6px;
+}
+
+.table.table-sm :is(th, td):not(:last-child) {
+  padding-inline-end: 16px;
+}
+
+.table :is(.text-end, [align="right"]) {
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+}
+
+.table :is(.text-center, [align="center"]) {
+  text-align: center;
+}
+
+.table .text-nowrap {
+  white-space: nowrap;
+}
+
+#widget {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  padding: 0;
+  background: transparent !important;
+}
+
+.card {
+  min-width: 0;
+  padding: 12px;
+  overflow: hidden;
+  overflow-wrap: break-word;
+  border-radius: var(--radius-2xl);
+  color: var(--card-foreground);
+  background: var(--card);
+}
+
+#widget > :not(.card) {
+  width: 100% !important;
+  max-width: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.tooltip {
+  position: fixed;
+  z-index: 50;
+  top: 0;
+  left: 0;
+  width: max-content;
+  max-width: min(
+    20rem,
+    var(--tooltip-available-width, calc(100vw - 10px)),
+    calc(100vw - 10px)
+  );
+  max-height: min(
+    var(--tooltip-available-height, calc(100vh - 10px)),
+    calc(100vh - 10px)
+  );
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  color: var(--popover-foreground);
+  background: var(--popover);
+  box-shadow: none;
+  font-size: var(--font-size-tooltip);
+  line-height: var(--line-height-tooltip);
+  overflow-wrap: break-word;
+  white-space: normal;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* The bundled tooltip runtime owns [data-tooltip]. AppBlock's CSS-only
+   pseudo-tooltip can widen dense grids even while hidden. */
+main [data-tooltip]::after {
+  content: none;
+}
+
+.viz-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(max(180px, 24%), 1fr));
+  gap: 10px;
+}
+
+.viz-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.viz-stat-value {
+  font-size: var(--font-size-h2);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.25;
+}
+
+.viz-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.viz-badge {
+  padding: 3px 8px;
+  border-radius: var(--radius-full);
+  color: var(--accent-foreground);
+  background: var(--accent);
+  font-weight: var(--font-weight-medium);
+}
+
+small,
+.text-small,
+.viz-badge {
+  font-size: var(--font-size-small);
+  line-height: var(--line-height-small);
+}
+
+.text-muted {
+  color: var(--muted-foreground);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.viz-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.viz-controls > .form-label {
+  display: grid;
+  min-width: min(100%, 260px);
+  flex: 1 1 280px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 2px 12px;
+  margin-bottom: 0;
+}
+
+.viz-controls > .form-label > :is(.form-control, .form-range, .form-select) {
+  grid-column: 1 / -1;
+}
+
+.btn,
+.form-check-input,
+.form-control,
+.form-range,
+.form-select {
+  font: inherit;
+}
+
+.btn {
+  appearance: button;
+  display: inline-flex;
+  inline-size: fit-content;
+  max-inline-size: 100%;
+  min-height: 28px;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  margin: 0;
+  padding: 0 8px;
+  -webkit-app-region: no-drag;
+  border: 1px solid var(--input);
+  border-radius: var(--radius-lg);
+  color: var(--secondary-foreground);
+  background: var(--secondary);
+  cursor: var(--cursor-interaction, pointer);
+  text-align: center;
+  text-decoration: none;
+  white-space: nowrap;
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+.btn:is(.btn-block, .viz-tile) {
+  inline-size: 100%;
+}
+
+.btn.viz-tile {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+a.btn {
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.btn:not(:disabled):hover {
+  background: color-mix(in srgb, var(--foreground) 6%, var(--secondary));
+}
+
+.btn-primary {
+  border-color: transparent;
+  color: var(--interactive-label-primary-default, var(--primary-foreground));
+  background: var(--interactive-bg-primary-default, var(--foreground));
+  background-clip: padding-box;
+}
+
+.btn-primary .text-muted {
+  color: color-mix(
+    in srgb,
+    var(--interactive-label-primary-default, var(--primary-foreground)) 50%,
+    transparent
+  );
+}
+
+.btn-primary:not(:disabled):hover {
+  background: color-mix(in srgb, var(--foreground) 80%, transparent);
+  background-clip: padding-box;
+}
+
+.btn-ghost {
+  border-color: transparent;
+  color: var(--muted-foreground);
+  background: transparent;
+}
+
+.btn-ghost:not(:disabled):hover {
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--foreground) 6%, var(--secondary));
+}
+
+.btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+[data-lucide] {
+  stroke-width: 1.6;
+}
+
+.form-label {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--foreground);
+}
+
+.form-control {
+  display: block;
+  width: 100%;
+  min-height: 28px;
+  padding: 0 8px;
+  outline: none;
+  border: 1px solid var(--input);
+  border-radius: var(--radius-lg);
+  color: var(--foreground);
+  background: var(--secondary);
+}
+
+.form-control::placeholder {
+  color: var(--muted-foreground);
+}
+
+.form-control[type="file"] {
+  padding: 0;
+  overflow: hidden;
+  cursor: var(--cursor-interaction, pointer);
+}
+
+.form-control[type="file"]::file-selector-button {
+  min-height: 26px;
+  margin-right: 8px;
+  padding: 0 8px;
+  border: 0;
+  border-right: 1px solid var(--input);
+  color: var(--secondary-foreground);
+  background: var(--secondary);
+  cursor: inherit;
+  font: inherit;
+}
+
+.form-control[type="file"]:not(:disabled):hover::file-selector-button {
+  background: color-mix(in srgb, var(--foreground) 6%, var(--secondary));
+}
+
+.form-control-color[type="color"] {
+  width: 40px;
+  height: 28px;
+  padding: 3px;
+  cursor: var(--cursor-interaction, pointer);
+}
+
+.form-control-color[type="color"]::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+.form-control-color[type="color"]::-webkit-color-swatch {
+  border: 0;
+  border-radius: calc(var(--radius-lg) - 4px);
+}
+
+textarea.form-control {
+  height: auto;
+  min-height: 72px;
+  padding: 8px 10px;
+  resize: vertical;
+}
+
+.form-control:focus-visible {
+  border-color: var(--ring);
+  box-shadow: inset 0 0 0 1px var(--ring);
+}
+
+.form-control:disabled,
+.form-select:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.form-select {
+  appearance: none;
+  display: block;
+  width: 100%;
+  min-height: 28px;
+  margin: 0;
+  padding: 0 32px 0 8px;
+  outline: none;
+  border: 1px solid var(--input);
+  border-radius: var(--radius-lg);
+  color: var(--foreground);
+  background-color: var(--secondary);
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--muted-foreground) 50%),
+    linear-gradient(135deg, var(--muted-foreground) 50%, transparent 50%);
+  background-position:
+    calc(100% - 14px) 50%,
+    calc(100% - 10px) 50%;
+  background-repeat: no-repeat;
+  background-size: 4px 4px;
+  cursor: var(--cursor-interaction, default);
+}
+
+.form-select:not(:disabled):hover {
+  background-color: color-mix(in srgb, var(--foreground) 6%, var(--secondary));
+}
+
+.form-select:focus-visible {
+  border-color: var(--ring);
+  box-shadow: inset 0 0 0 1px var(--ring);
+}
+
+.form-check {
+  display: flex;
+  min-height: 20px;
+  align-items: center;
+  gap: 6px;
+}
+
+.form-check-input {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  margin: 0;
+  border: 1px solid var(--input);
+  color: var(--primary-foreground);
+  background-color: transparent;
+  cursor: var(--cursor-interaction, default);
+  transition:
+    background-color 150ms,
+    border-color 150ms,
+    box-shadow 150ms;
+}
+
+.form-check:not(.form-switch) .form-check-input[type="checkbox"] {
+  border-color: var(--input);
+  border-radius: var(--radius-sm);
+  background-color: var(--secondary);
+  box-shadow: var(--shadow-sm);
+}
+
+.form-check:not(.form-switch)
+  .form-check-input:not(:disabled):not(:checked):hover {
+  background-color: var(--card);
+}
+
+.form-check:not(.form-switch) .form-check-input[type="checkbox"]:checked {
+  border-color: var(--primary);
+  background-color: var(--primary);
+}
+
+.form-check:not(.form-switch)
+  .form-check-input[type="checkbox"]:checked::before {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: var(--primary-foreground);
+  content: "";
+  mask: var(--checkmark-image) center / 12px 12px no-repeat;
+}
+
+.form-check-input[type="radio"] {
+  width: 14px;
+  height: 14px;
+  border-radius: var(--radius-full);
+}
+
+.form-check-input[type="radio"]:checked {
+  border: 2px solid var(--primary);
+  background:
+    radial-gradient(circle, var(--primary-foreground) 0 2.5px, transparent 3px),
+    var(--primary);
+}
+
+.form-check:not(.form-switch) .form-check-input:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.form-check:not(.form-switch) .form-check-input:disabled {
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.form-check:not(.form-switch) .form-check-input:disabled + .form-check-label {
+  cursor: not-allowed;
+}
+
+.form-switch .form-check-input:disabled,
+.form-switch .form-check-input:disabled + .form-check-label {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.form-check-label {
+  color: var(--foreground);
+  cursor: var(--cursor-interaction, default);
+}
+
+.form-switch .form-check-input {
+  position: relative;
+  width: 32px;
+  height: 20px;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: var(--muted);
+  box-shadow: none;
+  transition: background-color 200ms cubic-bezier(0, 0, 0.2, 1);
+}
+
+.form-switch .form-check-input::before {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 16px;
+  height: 16px;
+  box-sizing: border-box;
+  border: 1px solid light-dark(var(--primary-foreground), var(--foreground));
+  border-radius: var(--radius-full);
+  background: light-dark(var(--primary-foreground), var(--foreground));
+  box-shadow: var(--shadow-sm);
+  content: "";
+  transform: translate(2px, -50%);
+  transition: transform 200ms cubic-bezier(0, 0, 0.2, 1);
+}
+
+.form-switch .form-check-input:checked {
+  background: var(--primary);
+}
+
+.form-switch .form-check-input:checked::before {
+  transform: translate(14px, -50%);
+}
+
+.form-switch .form-check-input:focus-visible {
+  box-shadow: 0 0 0 2px var(--ring);
+}
+
+.form-range {
+  appearance: none;
+  display: block;
+  width: 100%;
+  height: 28px;
+  flex: 1;
+  margin: 0;
+  padding: 0;
+  outline: none;
+  border: 0;
+  accent-color: var(--primary);
+  background: linear-gradient(
+      color-mix(in srgb, var(--foreground) 7%, transparent),
+      color-mix(in srgb, var(--foreground) 7%, transparent)
+    )
+    center / 100% 2px no-repeat;
+}
+
+.form-range::-webkit-slider-runnable-track {
+  height: 28px;
+  background: transparent;
+}
+
+.form-range::-webkit-slider-thumb {
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  margin-top: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  background: light-dark(var(--primary-foreground), var(--foreground));
+}
+
+.form-range:focus-visible::-webkit-slider-thumb {
+  border-color: var(--ring);
+  box-shadow: inset 0 0 0 1px var(--ring);
+}
+
+.form-range::-moz-range-track {
+  height: 28px;
+  background: transparent;
+}
+
+.form-range::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  background: light-dark(var(--primary-foreground), var(--foreground));
+}
+
+.form-range:focus-visible::-moz-range-thumb {
+  border-color: var(--ring);
+  box-shadow: inset 0 0 0 1px var(--ring);
+}
+
+.form-range:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.btn:not(.btn-primary, .viz-tile):is(
+    [aria-pressed="true"],
+    [aria-selected="true"],
+    .is-selected
+  ) {
+  border-color: var(--primary);
+  color: var(--primary-foreground);
+  background: var(--primary);
+}
+
+.btn.viz-tile:is([aria-pressed="true"], [aria-selected="true"], .is-selected) {
+  border-color: var(--primary);
+  box-shadow: inset 0 0 0 1px var(--primary);
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+#widget > svg {
+  width: 100%;
+}
+
+.text-warning,
+.text-destructive {
+  color: var(--destructive);
+}
+</style>
+
+<meta name="theme-color" content="#0b1220">
+<meta name="application-name" content="Cubaby Teleprompter">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Cubaby">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="assets/icons/apple-touch-icon.png">
+
+<style id="CUBABY_APP_V2_SHELL">
+  :root { --cubaby-nav-h: 72px; }
+  body.cubaby-app { margin: 0; min-height: 100vh; background: var(--background); }
+  .cubaby-shell { min-height: 100vh; padding-bottom: calc(var(--cubaby-nav-h) + env(safe-area-inset-bottom)); }
+  .cubaby-screen { display: none; min-height: 100vh; padding: 1rem 1rem 6rem; box-sizing: border-box; }
+  .cubaby-screen.is-active { display: block; }
+  .cubaby-stage { display: none; }
+  .cubaby-stage.is-active { display: block; }
+  .cubaby-hero { padding: 1.25rem; border: 1px solid var(--border); border-radius: 24px; background: linear-gradient(145deg, color-mix(in srgb, var(--primary) 18%, transparent), color-mix(in srgb, var(--foreground) 3%, transparent)); margin-bottom: 1rem; }
+  .cubaby-eyebrow { font-size: .72rem; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; color: var(--primary); }
+  .cubaby-title { margin: .25rem 0 .35rem; font-size: clamp(2rem, 8vw, 3.4rem); line-height: .95; letter-spacing: -.04em; }
+  .cubaby-subtitle { margin: 0; color: var(--muted-foreground); font-size: .95rem; }
+  .cubaby-stats { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: .65rem; margin: 1rem 0; }
+  .cubaby-stat { padding: .85rem .75rem; border-radius: 18px; background: var(--card); border: 1px solid var(--border); }
+  .cubaby-stat strong { display:block; font-size: 1.55rem; line-height:1; }
+  .cubaby-stat span { display:block; margin-top:.3rem; font-size:.72rem; color:var(--muted-foreground); }
+  .cubaby-actions { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; }
+  .cubaby-action, .cubaby-set-card, .cubaby-song-card { border: 1px solid var(--border); border-radius: 18px; background: var(--card); color: var(--foreground); }
+  .cubaby-action { text-align:left; padding:1rem; min-height:105px; cursor:pointer; }
+  .cubaby-action strong { display:block; font-size:1rem; margin-bottom:.3rem; }
+  .cubaby-action span { color:var(--muted-foreground); font-size:.8rem; }
+  .cubaby-section-title { margin: .25rem 0 1rem; display:flex; align-items:end; justify-content:space-between; gap:.75rem; }
+  .cubaby-section-title h1 { margin:0; font-size:1.65rem; }
+  .cubaby-section-title p { margin:0; color:var(--muted-foreground); font-size:.78rem; }
+  .cubaby-set-list { display:grid; gap:.8rem; }
+  .cubaby-set-card { padding:1rem; display:grid; grid-template-columns:1fr auto; align-items:center; gap:.75rem; }
+  .cubaby-set-card h3 { margin:0 0 .25rem; }
+  .cubaby-set-card p { margin:0; color:var(--muted-foreground); font-size:.82rem; }
+  .cubaby-pill { display:inline-flex; align-items:center; gap:.3rem; padding:.28rem .55rem; border-radius:999px; font-size:.7rem; font-weight:800; background:var(--muted); }
+  .cubaby-pill.ready { background: color-mix(in srgb, var(--green) 18%, transparent); color:var(--green); }
+  .cubaby-pill.pending { background: color-mix(in srgb, var(--destructive) 14%, transparent); color:var(--destructive); }
+  .cubaby-search { position:sticky; top:0; z-index:10; padding:.25rem 0 .75rem; background:var(--background); }
+  .cubaby-search input { width:100%; box-sizing:border-box; border:1px solid var(--border); border-radius:14px; background:var(--card); color:var(--foreground); padding:.85rem 1rem; font:inherit; }
+  .cubaby-filter-row { display:flex; gap:.45rem; overflow:auto; padding:.1rem 0 .75rem; scrollbar-width:none; }
+  .cubaby-filter { white-space:nowrap; border:1px solid var(--border); border-radius:999px; background:transparent; color:var(--foreground); padding:.45rem .7rem; font:inherit; font-size:.78rem; }
+  .cubaby-filter.is-active { background:var(--foreground); color:var(--background); }
+  .cubaby-song-list { display:grid; gap:.55rem; }
+  .cubaby-song-card { width:100%; padding:.8rem .9rem; display:grid; grid-template-columns:42px 1fr auto; align-items:center; gap:.7rem; text-align:left; cursor:pointer; }
+  .cubaby-song-no { width:38px; height:38px; border-radius:12px; display:grid; place-items:center; font-weight:800; background:var(--muted); }
+  .cubaby-song-card h3 { margin:0; font-size:.94rem; }
+  .cubaby-song-card p { margin:.18rem 0 0; color:var(--muted-foreground); font-size:.72rem; }
+  .cubaby-bottom-nav { position:fixed; left:0; right:0; bottom:0; z-index:50; min-height:var(--cubaby-nav-h); padding: .45rem .6rem calc(.45rem + env(safe-area-inset-bottom)); display:grid; grid-template-columns:repeat(4,1fr); gap:.25rem; background:color-mix(in srgb, var(--background) 94%, transparent); backdrop-filter:blur(18px); border-top:1px solid var(--border); }
+  .cubaby-bottom-nav button { border:0; background:transparent; color:var(--muted-foreground); border-radius:12px; font:inherit; font-size:.7rem; font-weight:700; padding:.45rem .25rem; }
+  .cubaby-bottom-nav button.is-active { color:var(--primary); background:var(--accent); }
+  #cubaby-stage-home { flex:0 0 auto; }
+  @media (min-width: 760px) {
+    .cubaby-screen { max-width: 900px; margin:0 auto; padding-top:2rem; }
+    .cubaby-actions { grid-template-columns:repeat(3,1fr); }
+    .cubaby-song-list { grid-template-columns:1fr 1fr; }
+    .cubaby-bottom-nav { left:50%; transform:translateX(-50%); width:min(560px, calc(100% - 2rem)); bottom:1rem; border:1px solid var(--border); border-radius:18px; }
+  }
+
+  .cubaby-mode-card { display:grid; grid-template-columns:1fr 1fr; gap:.5rem; padding:.5rem; border:1px solid var(--border); border-radius:18px; background:var(--card); margin:1rem 0; }
+  .cubaby-mode-btn { border:0; border-radius:14px; padding:.8rem .7rem; background:transparent; color:var(--foreground); cursor:pointer; text-align:left; }
+  .cubaby-mode-btn strong { display:block; font-size:.95rem; }
+  .cubaby-mode-btn span { display:block; margin-top:.2rem; font-size:.74rem; color:var(--muted-foreground); }
+  .cubaby-mode-btn.is-active { background:var(--primary); color:var(--primary-foreground); }
+  .cubaby-mode-btn.is-active span { color:color-mix(in srgb, var(--primary-foreground) 75%, transparent); }
+  .cubaby-info-card { border:1px solid var(--border); border-radius:20px; background:var(--card); padding:1rem; margin:1rem 0; }
+  .cubaby-info-card h2 { margin:0 0 .35rem; font-size:1rem; }
+  .cubaby-info-card p { margin:.25rem 0; color:var(--muted-foreground); font-size:.84rem; line-height:1.45; }
+  .cubaby-mic-row { display:flex; gap:.65rem; align-items:center; flex-wrap:wrap; margin-top:.75rem; }
+  .cubaby-mic-status { font-size:.78rem; color:var(--muted-foreground); }
+  .cubaby-mic-status.ok { color:var(--green); font-weight:700; }
+  .cubaby-mic-status.warn { color:var(--destructive); font-weight:700; }
+  .cubaby-view-chip { display:inline-flex; align-items:center; gap:.35rem; border:1px solid var(--border); border-radius:999px; padding:.35rem .6rem; font-size:.74rem; background:var(--card); }
+  .cubaby-stage-mode { display:flex; gap:.4rem; flex-wrap:wrap; margin:.45rem 0 .25rem; }
+  .cubaby-stage-mode button { padding:.35rem .6rem; border-radius:999px; border:1px solid var(--border); background:transparent; color:var(--foreground); cursor:pointer; font-size:.75rem; }
+  .cubaby-stage-mode button.is-active { background:var(--primary); color:var(--primary-foreground); border-color:transparent; }
+
+</style>
+
+</head>
+<body class="cubaby-app">
+
+<div class="cubaby-shell" id="cubaby-app-shell" style="display:block;">
+  <section class="cubaby-screen is-active" id="cubaby-home-screen" data-screen="home">
+    <div class="cubaby-hero">
+      <div class="cubaby-eyebrow">CUBABY · BANDA</div>
+      <h1 class="cubaby-title">Tu set.<br>En tiempo real.</h1>
+      <p class="cubaby-subtitle">Repertorio común para la banda y una vista personal para cada músico.</p>
+      <div class="cubaby-mode-card" aria-label="Modo de visualización">
+        <button type="button" class="cubaby-mode-btn is-active" data-view-mode="band"><strong>BANDA</strong><span>Letra, estructura y cues comunes.</span></button>
+        <button type="button" class="cubaby-mode-btn" data-view-mode="personal"><strong>MI VISTA</strong><span>Referencias personales de Héctor · batería.</span></button>
+      </div>
+      <div class="cubaby-info-card" id="cubaby-mic-card">
+        <h2>Micrófono · Sync Vivo</h2>
+        <p>La app comprobará si este entorno permite escuchar el pulso de la banda. El visor de Biblioteca puede bloquear el micrófono aunque el código sea correcto.</p>
+        <div class="cubaby-mic-row">
+          <button type="button" class="btn btn-ghost" id="cubaby-test-mic">Probar micrófono</button>
+          <span class="cubaby-mic-status" id="cubaby-mic-diagnostic">Sin comprobar.</span>
+        </div>
+      </div>
+      <div class="cubaby-stats">
+        <div class="cubaby-stat"><strong id="cubaby-total-count">48</strong><span>Canciones</span></div>
+        <div class="cubaby-stat"><strong id="cubaby-ready-count">27</strong><span>Integradas</span></div>
+        <div class="cubaby-stat"><strong id="cubaby-pending-count">21</strong><span>Pendientes</span></div>
+      </div>
+      <button type="button" class="btn btn-primary" id="cubaby-start-stage" style="width:100%;padding:.85rem 1rem;">Abrir teleprompter</button>
+    </div>
+    <div class="cubaby-actions">
+      <button type="button" class="cubaby-action" data-go="sets"><strong>Sets</strong><span>Organiza el repertorio para ensayo o presentación.</span></button>
+      <button type="button" class="cubaby-action" data-go="songs"><strong>Canciones</strong><span>Busca y abre cualquiera de las 48 canciones.</span></button>
+      <button type="button" class="cubaby-action" data-stage="last"><strong>Última canción</strong><span>Regresa directamente a donde te quedaste.</span></button>
+    </div>
+  </section>
+
+  <section class="cubaby-screen" id="cubaby-sets-screen" data-screen="sets">
+    <div class="cubaby-section-title"><div><h1>Sets</h1><p>Colecciones actuales del repertorio maestro.</p></div></div>
+    <div class="cubaby-set-list">
+      <div class="cubaby-set-card"><div><h3>Set Base · Completo</h3><p>Las 48 canciones del maestro actual.</p></div><button type="button" class="btn btn-primary" data-set-filter="all">Ver 48</button></div>
+      <div class="cubaby-set-card"><div><h3>Integradas</h3><p>Canciones que ya tienen estructura/letra en el teleprompter.</p></div><button type="button" class="btn" data-set-filter="ready">Ver 27</button></div>
+      <div class="cubaby-set-card"><div><h3>Pendientes por integrar</h3><p>Las 21 canciones añadidas desde las capturas recientes.</p></div><button type="button" class="btn" data-set-filter="pending">Ver 21</button></div>
+    </div>
+  </section>
+
+  <section class="cubaby-screen" id="cubaby-songs-screen" data-screen="songs">
+    <div class="cubaby-section-title"><div><h1>Canciones</h1><p id="cubaby-song-result-label">48 en repertorio</p></div></div>
+    <div class="cubaby-search"><input id="cubaby-song-search" type="search" placeholder="Buscar canción o artista…" autocomplete="off"></div>
+    <div class="cubaby-filter-row" aria-label="Filtros de canciones">
+      <button type="button" class="cubaby-filter is-active" data-song-filter="all">Todas</button>
+      <button type="button" class="cubaby-filter" data-song-filter="ready">Integradas</button>
+      <button type="button" class="cubaby-filter" data-song-filter="pending">Pendientes</button>
+    </div>
+    <div class="cubaby-song-list" id="cubaby-song-list"></div>
+  </section>
+
+  <nav class="cubaby-bottom-nav" id="cubaby-bottom-nav" aria-label="Navegación principal">
+    <button type="button" class="is-active" data-nav="home">Inicio</button>
+    <button type="button" data-nav="sets">Sets</button>
+    <button type="button" data-nav="songs">Canciones</button>
+    <button type="button" data-nav="stage">Teleprompter</button>
+  </nav>
+</div>
+
+<div id="cubaby-teleprompter" class="cubaby-stage" style="display:none;">
+  <style>
+    #cubaby-teleprompter {
+      --lyrics-scale: 1.55;
+      color: var(--foreground);
+      background: transparent;
+    }
+    #cubaby-teleprompter .tele-controls {
+      position: sticky;
+      top: 0;
+      z-index: 5;
+      padding-block: 0.5rem;
+      background: var(--background);
+    }
+    #cubaby-teleprompter .tele-main-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: end;
+      gap: 0.5rem;
+    }
+    #cubaby-teleprompter .tele-main-row .song-picker {
+      flex: 1 1 18rem;
+    }
+    #cubaby-teleprompter .tele-secondary-row {
+      display: grid;
+      grid-template-columns: minmax(11rem, 1fr) minmax(11rem, 1fr);
+      align-items: end;
+      gap: 0.75rem;
+      margin-top: 0.5rem;
+    }
+    #cubaby-teleprompter .tele-metronome-row {
+      align-items: end;
+      margin-top: 0.5rem;
+    }
+    #cubaby-teleprompter .tele-bpm-field {
+      flex: 0 1 7rem;
+    }
+    #cubaby-teleprompter .tele-volume-field {
+      flex: 1 1 11rem;
+    }
+    #cubaby-teleprompter .tele-status {
+      margin-block: 0.5rem;
+    }
+    #cubaby-teleprompter .song-heading {
+      margin-top: 1rem;
+    }
+    #cubaby-teleprompter .song-notes {
+      margin-block: 0.5rem 1rem;
+    }
+    #cubaby-teleprompter .drummer-strip {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.75rem;
+      margin-block: 0.5rem;
+    }
+    #cubaby-teleprompter .drummer-kicker {
+      display: block;
+      color: var(--muted-foreground);
+      font-weight: 500;
+    }
+    #cubaby-teleprompter .drummer-value {
+      color: var(--foreground);
+      font-weight: 500;
+    }
+    #cubaby-teleprompter .drummer-notes {
+      margin-block: 0.5rem 1rem;
+    }
+    #cubaby-teleprompter .drummer-notes-label {
+      color: var(--foreground);
+      font-weight: 500;
+    }
+    #cubaby-teleprompter .drummer-notes ul {
+      margin-block: 0.4rem 0;
+    }
+    #cubaby-teleprompter .song-section {
+      margin-block: 1rem;
+      padding: 0.25rem 0.5rem;
+    }
+    #cubaby-teleprompter .song-section.chorus {
+      background: color-mix(in srgb, var(--viz-series-1) 13%, transparent);
+    }
+    #cubaby-teleprompter .section-heading {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.4rem;
+      margin-bottom: 0.4rem;
+    }
+    #cubaby-teleprompter .section-label {
+      color: var(--muted-foreground);
+      font-weight: 500;
+    }
+    #cubaby-teleprompter .chorus .section-label {
+      color: var(--foreground);
+    }
+    #cubaby-teleprompter .song-section.is-active-section {
+      box-shadow: inset 0.22rem 0 0 var(--primary);
+    }
+    #cubaby-teleprompter .lyric-line {
+      font-size: calc(var(--font-size-base) * var(--lyrics-scale));
+      padding: 0.12rem 0.35rem;
+      margin-block: 0.08rem;
+      transition: background-color 120ms ease, color 120ms ease;
+    }
+    #cubaby-teleprompter .chorus .lyric-line {
+      font-weight: 500;
+    }
+    #cubaby-teleprompter .lyric-line.is-active {
+      background: var(--accent);
+      color: var(--accent-foreground);
+      box-shadow: inset 0.22rem 0 0 var(--primary);
+    }
+    #cubaby-teleprompter .focus-guide {
+      height: 2px;
+      background: color-mix(in srgb, var(--primary) 45%, transparent);
+      margin-block: 0.5rem;
+    }
+    #cubaby-teleprompter .countdown {
+      color: var(--foreground);
+      font-weight: 500;
+    }
+    @media (max-width: 620px) {
+      #cubaby-teleprompter .tele-secondary-row {
+        grid-template-columns: 1fr;
+      }
+      #cubaby-teleprompter .drummer-strip {
+        grid-template-columns: 1fr;
+      }
+      #cubaby-teleprompter {
+        --lyrics-scale: 1.35;
+      }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      #cubaby-teleprompter .lyric-line {
+        transition: none;
+      }
+    }
+
+    /* --- SYNC VIVO v4 --- */
+    #cubaby-teleprompter .tele-live-row {
+      display: grid;
+      grid-template-columns: auto auto auto minmax(190px, 1fr) auto;
+      gap: 0.65rem;
+      align-items: end;
+      margin-block: 0.7rem;
+      padding: 0.75rem;
+      border: 1px solid var(--border);
+      border-radius: 0.85rem;
+      background: color-mix(in srgb, var(--card) 82%, transparent);
+    }
+    #cubaby-teleprompter .tele-live-row .btn { min-height: 2.35rem; }
+    #cubaby-teleprompter .live-status {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.45rem 0.8rem;
+      align-items: center;
+      min-height: 2.35rem;
+      padding-inline: 0.75rem;
+      border-radius: 0.65rem;
+      background: var(--muted);
+    }
+    #cubaby-teleprompter .live-dot {
+      width: 0.68rem;
+      height: 0.68rem;
+      border-radius: 50%;
+      display: inline-block;
+      background: var(--muted-foreground);
+      box-shadow: 0 0 0 0 color-mix(in srgb, var(--green) 35%, transparent);
+    }
+    #cubaby-teleprompter .live-dot.is-listening { background: var(--green); }
+    #cubaby-teleprompter .live-dot.is-beat {
+      background: var(--green);
+      animation: cubabyBeat 180ms ease-out;
+    }
+    #cubaby-teleprompter .live-bpm-number {
+      font-weight: 750;
+      font-variant-numeric: tabular-nums;
+    }
+    #cubaby-teleprompter .live-factor {
+      font-variant-numeric: tabular-nums;
+    }
+    #cubaby-teleprompter .live-help {
+      margin-top: -0.25rem;
+      margin-bottom: 0.65rem;
+    }
+    @keyframes cubabyBeat {
+      0% { transform: scale(1); box-shadow: 0 0 0 0 color-mix(in srgb, var(--green) 42%, transparent); }
+      45% { transform: scale(1.65); box-shadow: 0 0 0 0.45rem color-mix(in srgb, var(--green) 10%, transparent); }
+      100% { transform: scale(1); box-shadow: 0 0 0 0.8rem transparent; }
+    }
+    @media (max-width: 760px) {
+      #cubaby-teleprompter .tele-live-row {
+        grid-template-columns: 1fr 1fr;
+      }
+      #cubaby-teleprompter .live-status,
+      #cubaby-teleprompter .tele-live-sensitivity { grid-column: 1 / -1; }
+    }
+  </style>
+
+  <div class="tele-controls" aria-label="Controles del lector automático">
+    <div class="tele-main-row">
+      <button type="button" class="btn btn-ghost" id="cubaby-stage-home">Inicio</button>
+      <button type="button" class="btn btn-ghost" id="tele-prev">Anterior</button>
+      <label class="form-label song-picker" for="tele-song">Canción
+        <select class="form-select" id="tele-song"></select>
+      </label>
+      <button type="button" class="btn btn-ghost" id="tele-next">Siguiente</button>
+      <button type="button" class="btn btn-primary" id="tele-play">Iniciar</button>
+      <button type="button" class="btn" id="tele-fullscreen">Pantalla completa</button>
+    </div>
+    <div class="tele-secondary-row">
+      <label class="form-label" for="tele-speed">Velocidad: <span id="tele-speed-value">18</span> px/s
+        <input class="form-range" id="tele-speed" type="range" min="4" max="60" step="1" value="18">
+      </label>
+      <label class="form-label" for="tele-size">Tamaño: <span id="tele-size-value">155</span>%
+        <input class="form-range" id="tele-size" type="range" min="115" max="220" step="5" value="155">
+      </label>
+    </div>
+    <div class="viz-controls tele-metronome-row" aria-label="Metrónomo">
+      <button type="button" class="btn" id="tele-click" aria-pressed="false">Click: apagado</button>
+      <label class="form-label tele-bpm-field" for="tele-bpm">BPM
+        <input class="form-control" id="tele-bpm" type="number" min="30" max="260" step="1" inputmode="numeric" value="120">
+      </label>
+      <button type="button" class="btn btn-ghost" id="tele-tap">Tap Tempo</button>
+      <label class="form-label tele-volume-field" for="tele-click-volume">Volumen click: <span id="tele-click-volume-value">65</span>%
+        <input class="form-range" id="tele-click-volume" type="range" min="10" max="100" step="5" value="65">
+      </label>
+      <label class="form-check form-switch" for="tele-accent">
+        <input class="form-check-input" id="tele-accent" type="checkbox" checked>
+        <span class="form-check-label">Acento en 1</span>
+      </label>
+      <span class="text-small text-muted" id="tele-click-status" aria-live="polite">4/4 · detenido</span>
+    </div>
+
+    <div class="cubaby-stage-mode" aria-label="Vista del teleprompter">
+      <span class="cubaby-view-chip" id="cubaby-current-view-label">Vista: BANDA</span>
+      <button type="button" class="is-active" data-stage-view="band">Banda</button>
+      <button type="button" data-stage-view="personal">Mi vista · batería</button>
+    </div>
+
+    <div class="tele-live-row" aria-label="Sincronización con música en vivo">
+      <button type="button" class="btn btn-primary" id="tele-live-sync" aria-pressed="false">Sync vivo: apagado</button>
+      <button type="button" class="btn btn-ghost" id="tele-line-prev" title="Retroceder una línea">Línea −</button>
+      <button type="button" class="btn btn-ghost" id="tele-line-next" title="Avanzar una línea">Línea +</button>
+      <label class="form-label tele-live-sensitivity" for="tele-live-sensitivity">Sensibilidad micro: <span id="tele-live-sensitivity-value">55</span>%
+        <input class="form-range" id="tele-live-sensitivity" type="range" min="20" max="90" step="5" value="55">
+      </label>
+      <div class="live-status text-small" id="tele-live-status" aria-live="polite">
+        <span class="live-dot" id="tele-live-dot" aria-hidden="true"></span>
+        <span>Micro apagado</span>
+        <span class="live-bpm-number" id="tele-live-bpm">— BPM</span>
+        <span class="live-factor" id="tele-live-factor">×1.00</span>
+      </div>
+    </div>
+    <div class="text-small text-muted live-help">SYNC VIVO adapta la velocidad al pulso detectado. BPM = referencia de la canción · Línea −/+ corrige la posición al instante.</div>
+    <div class="tele-status text-small text-muted" id="tele-status" aria-live="polite">Listo. Espacio: lector · V: Sync vivo · C: click · T: Tap Tempo · [ / ]: línea · ←/→: canción.</div>
+    <div class="card drummer-strip" aria-live="polite">
+      <div><span class="drummer-kicker">BATERÍA - AHORA</span><span class="drummer-value" id="tele-now">Preparando...</span></div>
+      <div><span class="drummer-kicker">SIGUE</span><span class="drummer-value" id="tele-up-next">Preparando...</span></div>
+    </div>
+    <div class="focus-guide" aria-hidden="true"></div>
+  </div>
+
+  <main id="tele-song-view" aria-live="polite"></main>
+  <script type="application/json" id="cubaby-data">[{"number":1,"title":"I RAN (SO FAR AWAY)","notes":["[VOCES] Todos los coros requieren una segunda voz más grave que la voz principal."],"drummer_notes":[],"sections":[{"label":"VERSO 1","kind":"verse","cues":[],"lines":["I walk along the avenue","I never thought I'd meet a girl like you","Meet a girl like you","With auburn hair and tawny eyes","The kind of eyes that hypnotize me through","You hypnotize me through"],"drummer_cues":[]},{"label":"CORO 1","kind":"chorus","cues":["VOZ GRAVE"],"lines":["And I ran, I ran so far away","I just ran, I ran all night and day","I couldn't get away"],"drummer_cues":[]},{"label":"VERSO 2","kind":"verse","cues":[],"lines":["A cloud appears above your head","A beam of light comes shining down on you","Shining down on you","The cloud is moving nearer still","Aurora Borealis comes in view","Aurora comes in view"],"drummer_cues":[]},{"label":"CORO 2","kind":"chorus","cues":["VOZ GRAVE"],"lines":["And I ran, I ran so far away","I just ran, I ran all night and day","I couldn't get away"],"drummer_cues":[]},{"label":"VERSO 3","kind":"verse","cues":[],"lines":["Reached out a hand to touch your face","You're slowly disappearing from my view","'Appearing from my view","Reached out a hand to try again","I'm floating in a beam of light with you","A beam of light with you"],"drummer_cues":[]},{"label":"CORO 3","kind":"chorus","cues":["VOZ GRAVE"],"lines":["And I ran, I ran so far away","I just ran, I ran all night and day"],"drummer_cues":[]},{"label":"CORO FINAL","kind":"chorus","cues":["VOZ GRAVE","FINAL"],"lines":["And I ran, I ran so far away","I just ran, I couldn't get away"],"drummer_cues":[]}]},{"number":2,"title":"BREAKING THE LAW","notes":["[VOCES] Los coros van en voz grave.","[PUENTE / SIRENAS] Después de las sirenas, el riff entra a 2 guitarras.","[SALIDA] Se suma la tercera guitarra: Luis = riff; Iván = power chords marcados; Marlon = power chords muteados."],"drummer_notes":["[BATERÍA / REFERENCIA] Después de las sirenas cambia el arreglo y entran 2 guitarras."],"sections":[{"label":"VERSO 1","kind":"verse","cues":[],"lines":["There I was completely wasting, out of work and","down","All inside it's so frustrating as I drift from town to","town","Feel as though nobody cares if I live or die","So I might as well begin to put some action in","my life"],"drummer_cues":[]},{"label":"CORO 1","kind":"chorus","cues":["VOZ GRAVE"],"lines":["Breaking the law, breaking the law","Breaking the law, breaking the law","Breaking the law, breaking the law","Breaking the law, breaking the law"],"drummer_cues":[]},{"label":"VERSO 2","kind":"verse","cues":[],"lines":["So much for the golden future, I can't even start","I've had every promise broken, there's anger in","my heart","You don't know what it's like, you don't have a","clue","If you did you'd find yourselves doing the same","thing too"],"drummer_cues":[]},{"label":"CORO 2","kind":"chorus","cues":["VOZ GRAVE"],"lines":["Breaking the law, breaking the law","Breaking the law, breaking the law","Breaking the law, breaking the law","Breaking the law, breaking the law"],"drummer_cues":[]},{"label":"PUENTE / SIRENAS","kind":"bridge","cues":["ENTRAN 2 GUITARRAS"],"lines":["You don't know what it's like"],"drummer_cues":["CAMBIO DESPUÉS DE SIRENAS"]},{"label":"CORO 3","kind":"chorus","cues":["VOZ GRAVE"],"lines":["Breaking the law, breaking the law","Breaking the law, breaking the law","Breaking the law, breaking the law","Breaking the law, breaking the law"],"drummer_cues":[]},{"label":"SALIDA","kind":"outro","cues":["ENTRA 3a GUITARRA","FINAL"],"lines":["Breaking the law"],"drummer_cues":[]}]},{"number":3,"title":"IRRESPONSABLES","notes":["[ENTRA] En el segundo verso, Iván agrega algunas figuras."],"drummer_notes":[],"sections":[{"label":"VERSO 1","kind":"verse","cues":[],"lines":["Somos culpables de este amor escandaloso","Que el fuego mismo de pasión alimentó","Que en el remanso de la noche impostergable","Nos avergüenza seguir sintiéndolo"],"drummer_cues":[]},{"label":"CORO 1","kind":"chorus","cues":[],"lines":["Poco a poco","Fuimos volviéndonos locos","Y ese vapor de nuestro amor","Nos embriagó con su licor","Y culpo al carnaval interminable","Nos hizo confundir irresponsables"],"drummer_cues":[]},{"label":"VERSO 2","kind":"verse","cues":["ENTRA IVÁN: FIGURAS"],"lines":["Si fuimos carne de la intriga casquivana","Que la imprudencia del rumor hoy desató","Que descubiertos por la luz de la mañana","Nos castigaron la desidia y el dolor"],"drummer_cues":[]},{"label":"CORO 2","kind":"chorus","cues":[],"lines":["Poco a poco","Fuimos volviéndonos locos","Ese vapor de nuestro amor","Nos embriagó con su licor","Y culpo al carnaval interminable","Nos hizo confundir irresponsables"],"drummer_cues":[]},{"label":"CORO FINAL","kind":"chorus","cues":["FINAL"],"lines":["Poco a poco","Fuimos volviéndonos locos","Ese vapor de nuestro amor","Nos embriagó con su licor","Y culpo al carnaval interminable","Nos hizo confundir irresponsables"],"drummer_cues":[]}]},{"number":4,"title":"VENENO","notes":["[VOCES] Coro con una voz alta y una voz hablada.","[SALIDA] Una guitarra mantiene la figura y la otra sostiene acordes."],"drummer_notes":[],"sections":[{"label":"VERSO 1","kind":"verse","cues":[],"lines":["Sobre ti","Sobre mí","O de estrellas que se funden","Si eres tú","Si es el Sol","O es la Luna","Si es temor","Si es rencor","O la falsa indiferencia","De una mancha de lluvia","En tu memoria"],"drummer_cues":[]},{"label":"PRECORO","kind":"prechorus","cues":[],"lines":["Amanece otra vez","Y las horas se hacen tibias","Se desangran las sombras perfumadas","Una araña gigante dando vueltas en el aire","Una bola de niebla contraataca"],"drummer_cues":[]},{"label":"CORO 1","kind":"chorus","cues":["VOZ ALTA + VOZ HABLADA"],"lines":["Hablemos de luces","Hablemos de nada","Hablemos de cosas de verdad","De lo mortal","A veces tan triste","Y a veces tan libre","Veneno la confusión","Veneno yo"],"drummer_cues":[]},{"label":"VERSO 2","kind":"verse","cues":[],"lines":["Sobre ti","Sobre mí","O de estrellas que se funden","Si eres tú","Si es el Sol","O es la Luna"],"drummer_cues":[]},{"label":"CORO 2","kind":"chorus","cues":["VOZ ALTA + VOZ HABLADA"],"lines":["Hablemos de luces","Hablemos de nada","Hablemos de cosas de verdad","De lo mortal","A veces tan triste","Y a veces tan libre","Veneno la confusión","Veneno yo"],"drummer_cues":[]},{"label":"CORO FINAL","kind":"chorus","cues":["VOZ ALTA + VOZ HABLADA"],"lines":["Hablemos de luces","Hablemos de nada","Hablemos de cosas de verdad","De lo mortal","A veces tan triste","Y a veces tan libre","Veneno la confusión","Veneno yo"],"drummer_cues":[]},{"label":"SALIDA","kind":"outro","cues":["FIGURA + ACORDES","FINAL"],"lines":["Este día y en este lugar","Este día y en este lugar","Este día y en este lugar","Este día y en este lugar"],"drummer_cues":[]}]},{"number":5,"title":"NUNCA TE DOBLARÁS","notes":["[VERSOS - 3 GUITARRAS] Luis = riff; Iván = power chords muteados; Marlon = figura punteada.","[PANDERO] Mantenerlo durante toda la canción para llenar la atmósfera.","[INTERVERSO] Luis = riff; Iván = acordes marcados; Marlon = power chords.","[SOLO] Luis = riff; Iván = acordes; Marlon = power chords.","[CORO] Luis = riff; Iván = acordes marcados; Marlon = power chords.","[FINAL / VOCES] Todos empiezan 'nunca te'; coros siguen 'doblarás, ah ah ah ah as' solo una vez; voz principal canta 'pero tú'. No repetir el 'ah ah...' en cada vuelta."],"drummer_notes":["[BATERÍA / PERCUSIÓN] Mantener pandero durante toda la canción."],"sections":[{"label":"VERSO","kind":"verse","cues":["3 GUITARRAS","PANDERO"],"lines":["Nunca nos fijamos que los buitres también","lloran","Nunca nos fijamos en la risa de los sapos","Que los osos escapan de la Tierra en pleno","invierno","Los delfines del desierto bailan en luna llena","Nunca nos fijamos que las luciérnagas hablaban","En la soledad de la estratosfera brillaban","Que los lobos se mueren porque no pueden","amar","Que las mariposas resultaron ser fantasmas"],"drummer_cues":["PANDERO TODA LA CANCIÓN"]},{"label":"CORO","kind":"chorus","cues":["LUIS RIFF","IVÁN ACORDES","MARLON POWER CHORDS"],"lines":["Pero tú siempre estás ahí","Tan libre como el león","Tan firme como el Sol","Nunca te doblarás, ah ah ah as","Nunca te doblarás, ah ah ah as","Nunca te doblarás ah ah ah as","ah ah ah as"],"drummer_cues":[]},{"label":"COROS FINALES 1","kind":"chorus","cues":["TODOS: 'NUNCA TE'","AH... SOLO 1 VEZ"],"lines":["Pero tú siempre estás ahí","Tan libre como el león","Tan firme como el Sol","Nunca te (doblarás ah ah ah as)"],"drummer_cues":[]},{"label":"COROS FINALES 2","kind":"chorus","cues":["VOZ PRINCIPAL: 'PERO TÚ'","FINAL"],"lines":["Pero tú siempre estás ahí","Tan libre como el león","Tan firme como el Sol","Nunca te (doblarás ah ah ah as)","Pero tú siempre estás ahí","Tan libre como el león","Tan firme como el Sol","Nunca te (doblarás ah ah ah as)"],"drummer_cues":[]}]},{"number":6,"title":"MALDITO AMOR","notes":["[INICIO] Primer verso: solo batería, bajo y voz. La guitarra entra en el segundo párrafo.","[PRECORO] Falta incorporar un sample.","[SOLO] Iván toca power chords.","[POR CONFIRMAR - VOCES] Elegir entre una segunda voz durante todo el coro o efecto de doble voz."],"drummer_notes":["[BATERÍA / ENTRADA] Héctor entra desde el inicio: el primer verso comienza solo con batería, bajo y voz."],"sections":[{"label":"VERSO 1A","kind":"verse","cues":["SOLO BATERÍA + BAJO + VOZ","GUITARRA EN SILENCIO"],"lines":["Fue la fuerza del destino y algo más","No tiene sentido, nada en su lugar","En el peor momento y a pesar de todo y sin","pensar en nada"],"drummer_cues":["ENTRA DESDE INICIO"]},{"label":"VERSO 1B","kind":"verse","cues":["ENTRA GUITARRA"],"lines":["Nos sentimos, nos miramos y al tocar","Un escalofrío, electricidad","Me decía que antes de acabar el día ya serías","mía"],"drummer_cues":[]},{"label":"PRECORO","kind":"prechorus","cues":["FALTA SAMPLE"],"lines":["Y yo, juguete del destino y tú, cruzaste mi","camino","No tenemos más que amarnos hasta","destrozarnos"],"drummer_cues":[]},{"label":"CORO 1","kind":"chorus","cues":["2a VOZ O DOBLE VOZ: CONFIRMAR"],"lines":["Mal, maldito amor","Maldito amor que me fascina","Amor que me asesina","Morir en tus manos o morir de amor"],"drummer_cues":[]},{"label":"VERSO 2A","kind":"verse","cues":[],"lines":["Fue la fuerza del destino y algo más","No tiene sentido, nada en su lugar","En el peor momento y a pesar de todo y sin","pensar en nada"],"drummer_cues":[]},{"label":"VERSO 2B","kind":"verse","cues":[],"lines":["Nos sentimos, nos miramos y al tocar","Un escalofrío, electricidad","Me decía que antes de acabar el día ya serías","mía"],"drummer_cues":[]},{"label":"CORO 2","kind":"chorus","cues":[],"lines":["Mal, maldito amor","Maldito amor que me fascina","Amor que me asesina","Morir en tus manos o morir de amor"],"drummer_cues":[]},{"label":"CORO 3","kind":"chorus","cues":[],"lines":["Mal, maldito amor","Maldito amor que me fascina","Amor que me asesina","Morir en tus manos o morir sin ti amor"],"drummer_cues":[]},{"label":"CORO FINAL","kind":"chorus","cues":["FINAL"],"lines":["Mal, maldito amor","Maldito amor que me fascina","Amor que me asesina","Morir en tus manos o morir de amor","Mal, maldito amor","Maldito amor que me fascina","Amor que me asesina","Morir en tus manos o morir sin ti amor"],"drummer_cues":[]}]},{"number":7,"title":"JUST LIKE HEAVEN","notes":["[ENTRA RIFF] El verso final lleva el riff."],"drummer_notes":[],"sections":[{"label":"VERSO 1","kind":"verse","cues":[],"lines":["\"Show me, show me, show me how you do that","trick?","The one that makes me scream.\" she said","\"The one that makes me laugh.\" she said","And threw her arms around my neck","\"Show me how you do it,","And I promise you,","I promise that","I'll run away with you,","I'll run away with you.\""],"drummer_cues":[]},{"label":"VERSO 2","kind":"verse","cues":[],"lines":["Spinning on that dizzy edge","I kissed her face and kissed her head","And dreamed of all the different ways","I had to make her glow","\"Why are you so far away?\" she said,","\"Why won't you ever know","That I'm in love with you,","That I'm in love with you.\""],"drummer_cues":[]},{"label":"CORO 1","kind":"chorus","cues":[],"lines":["You","Soft and only","You","Lost and lonely","You","Strange as angels","Dancing in the deepest oceans","Twisting in the water","You're just like a dream","You're just like a dream"],"drummer_cues":[]},{"label":"VERSO FINAL","kind":"verse","cues":["ENTRA RIFF"],"lines":["Daylight licked me into shape","I must have been asleep for days","And moving lips to breathe her name","I opened up my eyes","And found myself alone alone","Alone above a raging sea","That stole the only girl I loved","And drowned her deep inside of me"],"drummer_cues":[]},{"label":"CORO FINAL","kind":"chorus","cues":["FINAL"],"lines":["You","Soft and only","You","Lost and lonely","You","Just like heaven"],"drummer_cues":[]}]},{"number":8,"title":"CLOCKS","notes":["[GUITARRAS] Iván = power chords limpios; Luis = distorsión.","[VOCES - POR CONFIRMAR] El primer 'You are' va a una voz; definir si Iván agrega la segunda."],"drummer_notes":[],"sections":[{"label":"VERSO 1","kind":"verse","cues":[],"lines":["The lights go out and I can't be saved","Tides that I tried to swim against","Have brought me down upon my knees","Oh I beg, I beg and plead, singing"],"drummer_cues":[]},{"label":"VERSO 1B","kind":"verse","cues":[],"lines":["Come out of things unsaid","Shoot an apple off my head and a","Trouble that can't be named","A tiger's waiting to be tamed, singing"],"drummer_cues":[]},{"label":"REFRÁN 1","kind":"chorus","cues":["1 VOZ","2a VOZ: CONFIRMAR"],"lines":["You are, you are"],"drummer_cues":[]},{"label":"VERSO 2","kind":"verse","cues":[],"lines":["Confusion never stops","Closing walls and ticking clocks","Gonna come back and take you home","I could not stop that you now know, singing"],"drummer_cues":[]},{"label":"VERSO 2B","kind":"verse","cues":[],"lines":["Come out upon my seas","Cursed missed opportunities","Am I a part of the cure?","Or am I part of the disease?","Singing"],"drummer_cues":[]},{"label":"REFRÁN 2","kind":"chorus","cues":[],"lines":["You are, you are","You are, you are"],"drummer_cues":[]},{"label":"REFRÁN 3","kind":"chorus","cues":[],"lines":["You are, you are"],"drummer_cues":[]},{"label":"PUENTE","kind":"bridge","cues":[],"lines":["And nothing else compares","Oh nothing else compares","And nothing else compares"],"drummer_cues":[]},{"label":"REFRÁN 4","kind":"chorus","cues":[],"lines":["You are, you are"],"drummer_cues":[]},{"label":"SALIDA","kind":"outro","cues":["FINAL"],"lines":["Home, home where I wanted to go","Home, home where I wanted to go","Home, home where I wanted to go (You are)","Home, home where I wanted to go (You are)"],"drummer_cues":[]}]},{"number":9,"title":"DISCO 2000","notes":["[PRECORO] Falta una guitarra con acorde marcado.","[CORO] La guitarra marca el riff y el teclado marca notas con ritmo distinto al riff.","[POR CONFIRMAR - VOCES] Cantar todo el coro a 2 voces o usar efecto de doble voz."],"drummer_notes":[],"sections":[{"label":"VERSO 1A","kind":"verse","cues":[],"lines":["Oh, we were born within an hour of each other","Our mothers said we could be sister and brother","Your name is Deborah, (Deborah)","It never suited ya"],"drummer_cues":[]},{"label":"VERSO 1B","kind":"verse","cues":[],"lines":["And they said that when we grew up","We'd get married and never split up","Oh, we never did it","Although I often thought of it"],"drummer_cues":[]},{"label":"PRECORO 1","kind":"prechorus","cues":["FALTA GUITARRA: ACORDE MARCADO"],"lines":["Oh, Deborah, do you recall?","Your house was very small","With woodchip on the wall","When I came 'round to call","You didn't notice me at all","And I said"],"drummer_cues":[]},{"label":"CORO 1","kind":"chorus","cues":["GUITARRA: RIFF","TECLADO: CONTRARRITMO","2 VOCES: CONFIRMAR"],"lines":["Let's all meet up in the year 2000","Won't it be strange when we're all fully grown?","Be there 2 o'clock by the fountain down the road","I never knew that you'd get married","I would be living down here on my own","On that damp and lonely Thursday years ago"],"drummer_cues":[]},{"label":"VERSO 2A","kind":"verse","cues":[],"lines":["You were the first girl at school to get breasts","And Martyn said that you were the best","Oh, the boys all loved you but I was a mess","I had to watch them try and get you undressed"],"drummer_cues":[]},{"label":"VERSO 2B","kind":"verse","cues":[],"lines":["We were friends, that was as far as it went","I used to walk you home sometimes, but it","meant","Oh, it meant nothing to you","'Cause you were so popular"],"drummer_cues":[]},{"label":"PRECORO 2","kind":"prechorus","cues":[],"lines":["Deborah, do you recall?","Your house was very small","With woodchip on the wall","When I came around to call","You didn't notice me at all","And I said"],"drummer_cues":[]},{"label":"CORO 2","kind":"chorus","cues":[],"lines":["Let's all meet up in the year 2000","Won't it be strange when we're all fully grown?","Be there 2 o'clock by the fountain down the road","I never knew that you'd get married","I would be living down here on my own","On that damp and lonely Thursday years ago"],"drummer_cues":[]},{"label":"BREAK","kind":"bridge","cues":[],"lines":["Do it","Oh yeah (oh yeah)","Oh yeah (oh yeah)"],"drummer_cues":[]},{"label":"PRECORO FINAL","kind":"prechorus","cues":[],"lines":["Oh, Deborah, do you recall?","Your house was very small","With woodchip on the wall","And when I came around to call","You didn't notice me at all","And I said"],"drummer_cues":[]},{"label":"CORO FINAL","kind":"chorus","cues":["FINAL"],"lines":["Let's all meet up in the year 2000","Won't it be strange when we're all fully grown?","Be there 2 o'clock by the fountain down the road","I never knew that you'd get married","I would be living down here on my own","On that damp and lonely Thursday years ago"],"drummer_cues":[]},{"label":"CODA 1","kind":"outro","cues":[],"lines":["Oh, what are you doing Sunday, baby?","Would you like to come and meet me maybe?","You can even bring your baby","Ooh, ooh-ooh-ooh, ooh, ooh, ooh"],"drummer_cues":[]},{"label":"CODA 2","kind":"outro","cues":["FINAL"],"lines":["What are you doing Sunday, baby?","Would you like to come and meet me maybe?","You can even bring your baby","Ooh, ooh-ooh-ooh, ooh, ooh, ooh","Ooh-ooh-ooh, ooh, ooh, ooh"],"drummer_cues":[]}]},{"number":10,"title":"PSYCHO KILLER","notes":["[CONTROL] Evitar que la intensidad haga que todos toquen más fuerte de lo acordado.","[CORO - GUITARRAS] Una guitarra marca acordes y la otra hace rasgueo.","[VOCES] Coro principal a una voz. Los coros pueden responder 'Psycho Killer', pero deben guardar la pausa y no cantar el 'fa-fa-fa'."],"drummer_notes":["[BATERÍA / DINÁMICA] No aumentar el volumen por emoción.","[BATERÍA / PAUSA - POR CONFIRMAR] La nota del ensayo marca una pausa en el coro; confirmar si incluye corte de batería."],"sections":[{"label":"VERSO 1","kind":"verse","cues":[],"lines":["I can't seem to face up to the facts","I'm tense and nervous and I can't relax","I can't sleep 'cause my bed's on fire","Don't touch me I'm a real live wire"],"drummer_cues":[]},{"label":"CORO 1A","kind":"chorus","cues":["1 VOZ","PAUSA: COROS SIN 'FA-FA-FA'"],"lines":["Psycho Killer","Qu'est-ce que c'est ?","fa fa fa fa fa fa fa fa fa far better","Run run run run run run run away"],"drummer_cues":["PAUSA: CONFIRMAR CORTE"]},{"label":"CORO 1B","kind":"chorus","cues":[],"lines":["Psycho Killer","Qu'est-ce que c'est ?","fa fa fa fa fa fa fa fa fa far better","Run run run run run run run away"],"drummer_cues":[]},{"label":"VERSO 2","kind":"verse","cues":[],"lines":["You start a conversation you can't even finish it","You're talkin' a lot, but you're not sayin' anything","When I have nothing to say, my lips are sealed","Say something once, why say it again?"],"drummer_cues":[]},{"label":"CORO 2","kind":"chorus","cues":[],"lines":["Psycho Killer","Qu'est-ce que c'est ?","fa fa fa fa fa fa fa fa fa far better","Run run run run run run run away","Psycho Killer","Qu'est-ce que c'est ?","fa fa fa fa fa fa fa fa fa far better","Run run run run run run run away"],"drummer_cues":[]},{"label":"VERSO 3","kind":"verse","cues":[],"lines":["Ce que j'ai fait, ce soir-là","Ce qu'elle a dit, ce soir-là","Réalisant mon espoir","Je me lance, vers la gloire ... OK","We are vain and we are blind","I hate people when they're not polite"],"drummer_cues":[]},{"label":"CORO FINAL A","kind":"chorus","cues":[],"lines":["Psycho Killer","Qu'est-ce que c'est ?","fa fa fa fa fa fa fa fa fa far better","Run run run run run run run away"],"drummer_cues":[]},{"label":"CORO FINAL B","kind":"chorus","cues":["FINAL"],"lines":["Psycho Killer","Qu'est-ce que c'est ?","fa fa fa fa fa fa fa fa fa far better","Run run run run run run run away","oh oh oh oh oh oh oh oh"],"drummer_cues":[]}]},{"number":11,"title":"EN LA CIUDAD DE LA FURIA","notes":["[INTRO] La figura de punteo (teclado o guitarra) inicia de inmediato mientras entra la segunda guitarra.","[POR CONFIRMAR - VOCES] Segunda voz en las primeras palabras del precoro: 'Me verás caer', 'Te desnudaré', etc.","[SOLO] Luis hace el solo; Iván acompaña con el riff del verso."],"drummer_notes":[],"sections":[{"label":"VERSO 1A","kind":"verse","cues":["FIGURA INMEDIATA + 2a GUITARRA"],"lines":["Me verás volar","Por la ciudad de la furia","Donde nadie sabe de mí","Y yo soy parte de todos"],"drummer_cues":[]},{"label":"VERSO 1B","kind":"verse","cues":[],"lines":["Nada cambiará","Con un aviso de curva","En sus caras veo el temor","Ya no hay fábulas","En la ciudad de la furia"],"drummer_cues":[]},{"label":"PRECORO 1A","kind":"prechorus","cues":["2a VOZ: CONFIRMAR"],"lines":["Me verás caer","Como un ave de presa","Me verás caer","Sobre terrazas desiertas"],"drummer_cues":[]},{"label":"PRECORO 1B","kind":"prechorus","cues":["2a VOZ: CONFIRMAR"],"lines":["Te desnudaré","Por las calles azules","Me refugiaré","Antes que todos despierten"],"drummer_cues":[]},{"label":"CORO 1A","kind":"chorus","cues":[],"lines":["Me dejarás dormir al amanecer","Entre tus piernas","Entre tus piernas"],"drummer_cues":[]},{"label":"CORO 1B","kind":"chorus","cues":[],"lines":["Sabrás ocultarme bien y desaparecer","Entre la niebla","Entre la niebla"],"drummer_cues":[]},{"label":"POSTCORO","kind":"bridge","cues":[],"lines":["Un hombre alado extraña la tierra"],"drummer_cues":[]},{"label":"VERSO 2A","kind":"verse","cues":[],"lines":["Me verás volar","Por la ciudad de la furia","Donde nadie sabe de mí","Y yo soy parte de todos"],"drummer_cues":[]},{"label":"VERSO 2B","kind":"verse","cues":[],"lines":["Con la luz del sol","Se derriten mis alas","Solo encuentro en la oscuridad","Lo que me une","Con la ciudad de la furia"],"drummer_cues":[]},{"label":"PRECORO 2A","kind":"prechorus","cues":["2a VOZ: CONFIRMAR"],"lines":["Me verás caer","Como una flecha salvaje","Me verás caer","Entre vuelos fugaces"],"drummer_cues":[]},{"label":"PRECORO 2B","kind":"prechorus","cues":[],"lines":["Buenos Aires se ve","Tan susceptible","Es el destino de furia, es","Lo que en sus caras persiste"],"drummer_cues":[]},{"label":"CORO 2A","kind":"chorus","cues":[],"lines":["Me dejarás dormir al amanecer","Entre tus piernas","Entre tus piernas"],"drummer_cues":[]},{"label":"CORO 2B","kind":"chorus","cues":[],"lines":["Sabrás ocultarme bien y desaparecer","Entre la niebla","Entre la niebla"],"drummer_cues":[]},{"label":"POSTCORO","kind":"bridge","cues":[],"lines":["Un hombre alado prefiere la noche"],"drummer_cues":[]},{"label":"SALIDA","kind":"outro","cues":["FINAL"],"lines":["Me verás volver","Me verás volver"],"drummer_cues":[]}]},{"number":12,"title":"LAS BATALLAS","notes":["[TECLADO] Revisar el piano durante los versos.","[VOCES] La segunda voz debe ir más aguda."],"drummer_notes":[],"sections":[{"label":"VERSO 1A","kind":"verse","cues":["REVISAR PIANO"],"lines":["Oye Carlos, ¿por qué tuviste que salirte de la","escuela esta mañana?","Oye Carlos, ¿por qué tuviste que decirle que la","amabas a Mariana?"],"drummer_cues":[]},{"label":"VERSO 1B","kind":"verse","cues":["REVISAR PIANO"],"lines":["En la escuela se corrió el rumor","Y en tu clase todo el mundo se enteró"],"drummer_cues":[]},{"label":"VERSO 1C","kind":"verse","cues":["REVISAR PIANO"],"lines":["Y en tu casa mamá te preguntó","Si acaso fue tu hermano quien te indujo","O peor aún, fue Mariana, sí","Fue ella quien te lo propuso"],"drummer_cues":[]},{"label":"VERSO 1D","kind":"verse","cues":["REVISAR PIANO"],"lines":["Papá dijo: \"Este niño no es normal","Será mejor llevarlo al hospital\""],"drummer_cues":[]},{"label":"CORO","kind":"chorus","cues":["2a VOZ AGUDA"],"lines":["Por alto que esté el cielo en el mundo","Por hondo que sea el mar profundo","No habrá una barrera en el mundo","Que mi amor profundo no rompa por ti"],"drummer_cues":[]},{"label":"VERSO FINAL","kind":"verse","cues":["REVISAR PIANO"],"lines":["Oye Carlos ¿por qué tuviste que salirte de la","escuela ésta mañana?","Oye Carlos ¿por qué tuviste que decirle que la","amabas a Mariana?"],"drummer_cues":[]},{"label":"SALIDA","kind":"outro","cues":["FINAL"],"lines":["Uh uh uh uh uh"],"drummer_cues":[]}]},{"number":13,"title":"EL ESQUELETO","notes":["[SOLO] Alternar sax con guitarra. Si Marlon no usa sax, acompaña con ritmo."],"drummer_notes":[],"sections":[{"label":"VERSO 1","kind":"verse","cues":[],"lines":["Ya estoy cansado de estar sin trabajar","Ya solo pido, una oportunidad (una","oportunidad)","Y yo busco la respuesta, en un radio viejo","Y en un chá chá chá (y en un chá chá chá)"],"drummer_cues":[]},{"label":"CORO 1","kind":"chorus","cues":[],"lines":["Y suena, y suena, y suena mi esqueleto","Y suena, y suena, y suena al bailar","Y suena, y suena, y suena mi esqueleto","Y suena, y suena, y suena al bailar"],"drummer_cues":[]},{"label":"VERSO 2","kind":"verse","cues":[],"lines":["Y en las noches, me pongo a bailar","Y se dibuja mi sombra en la pared (mi sombra","en la pared)","Y mi cerebro empieza a reventar","Como un sapo al enojar (al enojar)"],"drummer_cues":[]},{"label":"CORO 2","kind":"chorus","cues":[],"lines":["Y suena, y suena, y suena mi esqueleto","Y suena, y suena, y suena al bailar","Y suena, y suena, y suena mi esqueleto","Y suena, y suena, y suena al bailar"],"drummer_cues":[]},{"label":"VERSO 3","kind":"verse","cues":[],"lines":["Y en las noches, empieza a sonar","Una batería","Que no me deja soñar (que no deja soñar)","Deja soñar"],"drummer_cues":[]},{"label":"CORO 3","kind":"chorus","cues":[],"lines":["Y suena, y suena, y suena mi esqueleto","Y suena, y suena, y suena al bailar","Y suena, y suena, y suena mi esqueleto","Y suena, y suena, y suena al bailar"],"drummer_cues":[]},{"label":"PUENTE / SOLO","kind":"bridge","cues":["SAX ↔ GUITARRA","SI NO HAY SAX: MARLON RÍTMICA"],"lines":["Ráspate esa tibia"],"drummer_cues":[]},{"label":"VOCES","kind":"vocal","cues":[],"lines":["Oh","Oh, oh, oh","Oh, oh, oh","Uh, uh, uh, uh","Uh, uh, uh, uh, uh, uh","Uh, uh"],"drummer_cues":[]},{"label":"CORO FINAL","kind":"chorus","cues":["FINAL"],"lines":["Y suena, y suena, y suena mi esqueleto","Y suena, y suena, y suena al bailar","Y suena, y suena, y suena mi esqueleto","Y suena, y suena"],"drummer_cues":[]},{"label":"CODA","kind":"outro","cues":[],"lines":["Ba ba ba ba ba ba ba ba ba ba ba ba ba ba ba"],"drummer_cues":[]}]},{"number":14,"title":"DÍA CERO","notes":["[CORO] Iván agrega pandero."],"drummer_notes":["[BATERÍA / REFERENCIA] Iván agrega pandero en los coros."],"sections":[{"label":"VERSO 1A","kind":"verse","cues":[],"lines":["Veo lo que creo ver, no veo más","De lo que pueda contar, no recuerdo nada","No hay necesidad de hablarlo más"],"drummer_cues":[]},{"label":"VERSO 1B","kind":"verse","cues":[],"lines":["Creo creer, temo temer, que esto es verdad","La vida se nubló en su totalidad","Estoy perdido","Y no sé mirar lo que dejé allá atrás"],"drummer_cues":[]},{"label":"CORO 1","kind":"chorus","cues":["ENTRA PANDERO: IVÁN"],"lines":["En ese camino largo","Que un día me vio caminar","Nació esta ciega herida","Que borró hoy día mi ayer"],"drummer_cues":["PANDERO DE IVÁN"]},{"label":"VERSO 2","kind":"verse","cues":[],"lines":["Personas extrañas hablan de quien fui","Pretenden darme valor sin que sepan nada","No hay necesidad ni siquiera de llorar por estar","así","Mi amnesia me dice absolutamente nada más","Que esa sensación de ansiedad"],"drummer_cues":[]},{"label":"CORO 2","kind":"chorus","cues":["ENTRA PANDERO: IVÁN"],"lines":["En ese camino largo","Que un día me vio caminar","Quemé una biografía","Y soplé cenizas del ayer"],"drummer_cues":["PANDERO DE IVÁN"]},{"label":"PUENTE","kind":"bridge","cues":[],"lines":["No intenten enseñarme quién me quiso","Y a quién debo amar","Comienza el día cero","Y mañana su continuidad"],"drummer_cues":[]},{"label":"VOCES","kind":"vocal","cues":[],"lines":["(Shada-da-da-da)","(Shada-da-da-da)"],"drummer_cues":[]},{"label":"CODA 1","kind":"outro","cues":[],"lines":["Y soplé cenizas del ayer"],"drummer_cues":[]},{"label":"VOCES","kind":"vocal","cues":[],"lines":["(Shada-da-da-da)","(Shada-da-da-da)","(Shada-da-da-da)","(Shada-da-da-da)"],"drummer_cues":[]},{"label":"CODA 2","kind":"outro","cues":[],"lines":["Y soplé cenizas de mi ayer","No intenten enseñarme"],"drummer_cues":[]},{"label":"VOCES","kind":"vocal","cues":[],"lines":["(Shada-da-da-da)","(Shada-da-da-da)","(Shada-da-da-da)","(Shada-da-da-da)"],"drummer_cues":[]},{"label":"RESPUESTA","kind":"outro","cues":[],"lines":["Quién me quiso y a quién debo amar"],"drummer_cues":[]},{"label":"VOCES","kind":"vocal","cues":[],"lines":["(Shada-da-da-da)","(Shada-da-da-da)","(Shada-da-da-da)","(Shada-da-da-da)"],"drummer_cues":[]},{"label":"RESPUESTA FINAL","kind":"outro","cues":["FINAL"],"lines":["Quién me quiso y a quién debo amar"],"drummer_cues":[]}]},{"number":15,"title":"HOY TENGO MIEDO","notes":["[INTRO] Bajo y guitarra hacen lo mismo; alternativa: duplicar el bajo con efecto.","[ARREGLO] Iván o Marlon agrega segunda guitarra o teclado."],"drummer_notes":[],"sections":[{"label":"VERSO 1A","kind":"verse","cues":["BAJO + GUITARRA AL UNÍSONO"],"lines":["Hoy tengo miedo de salir otra vez","Tengo miedo de encontrarte como aquella vez","Los nervios me traicionan me derrota el estrés","Sé que puedo arrepentirme después"],"drummer_cues":[]},{"label":"VERSO 1B","kind":"verse","cues":[],"lines":["Hoy tengo miedo de salirte a buscar","Tengo miedo de poderte encontrar","Tengo miedo de tus ojos, tengo miedo de hablar","Tengo miedo de quererte besar"],"drummer_cues":[]},{"label":"PRECORO 1","kind":"prechorus","cues":[],"lines":["Me digo no seas tonto, no seas tan escéptico","No trates de escapar"],"drummer_cues":[]},{"label":"VERSO 2A","kind":"verse","cues":[],"lines":["Hoy tengo miedo de volver a bailar","Tengo miedo que te puedas burlar","Me dan miedo las personas no quiero manejar","Tengo miedo que me pueda gustar"],"drummer_cues":[]},{"label":"VERSO 2B","kind":"verse","cues":[],"lines":["Hoy tengo miedo de salir otra vez","Tengo miedo de volver a caer","Me dan miedo las mentiras ya no tengo más fe","Tengo miedo de volver a creer"],"drummer_cues":[]},{"label":"PRECORO 2","kind":"prechorus","cues":[],"lines":["Y digo no seas tonto, no seas tan escéptico","No trates de escapar"],"drummer_cues":[]},{"label":"CORO 1A","kind":"chorus","cues":[],"lines":["No todos son tan malos, no todo está mal","No todos son villanos queriéndote matar","No todo está perdido ni se va a acabar","La vida es un pic-nic"],"drummer_cues":[]},{"label":"CORO 1B","kind":"chorus","cues":[],"lines":["No todo son tan malos, no todo está mal","No todos son villanos queriéndote matar","No todo está perdido ni se va a acabar","La vida es un pic-nic"],"drummer_cues":[]},{"label":"PRECORO FINAL","kind":"prechorus","cues":[],"lines":["Y digo no seas tonto, no seas tan escéptico","No trates de escapar"],"drummer_cues":[]},{"label":"CORO FINAL A","kind":"chorus","cues":[],"lines":["No todos son tan malos, no todo está mal","No todos son villanos queriéndote matar","No todo está perdido ni se va a acabar","La vida es un pic-nic"],"drummer_cues":[]},{"label":"CORO FINAL B","kind":"chorus","cues":[],"lines":["No todo son tan malos, no todo está mal","No todos son villanos queriéndote matar","No todo está perdido ni se va a acabar","La vida es un pic-nic"],"drummer_cues":[]},{"label":"SALIDA","kind":"outro","cues":["FINAL"],"lines":["Oh","Oh Oh","Oh","Oh Oh","Woh"],"drummer_cues":[]}]},{"number":16,"title":"AVIÉNTAME","notes":["[CUE] En la estrofa, antes del coro, la última nota es A.","[SALIDA / SOLO] El solo final va una sola vuelta; una vuelta adicional queda a criterio en el ensayo."],"drummer_notes":["[BATERÍA / CUE] La última nota antes de entrar al coro es A.","[BATERÍA / SALIDA] El solo final dura una vuelta; una vuelta adicional queda por decidir."],"sections":[{"label":"VERSO 1A","kind":"verse","cues":[],"lines":["Qué triste se nos fue la vida","atrás del cielo nos miran llorar","fumando lunas a escondidas","revoloteando entre viejas paredes"],"drummer_cues":[]},{"label":"VERSO 1B","kind":"verse","cues":["ÚLTIMA NOTA ANTES DEL CORO: A"],"lines":["Qué triste se nos fue la vida","la lluvia ácida mojaba octubre","y de rodillas vuelan lamentos","de algunos buitres de algunos cerdos"],"drummer_cues":["PREPARAR CORO DESPUÉS DE A"]},{"label":"CORO 1A","kind":"chorus","cues":[],"lines":["Aviéntame","Aviéntame hasta donde quieras","y luego ven a mirar como revivo"],"drummer_cues":[]},{"label":"CORO 1B","kind":"chorus","cues":[],"lines":["Aviéntame","Aviéntame hasta donde quieras","y luego ven a mirar como no muero","como aguanto"],"drummer_cues":[]},{"label":"VERSO 2","kind":"verse","cues":["ÚLTIMA NOTA ANTES DEL CORO: A"],"lines":["Qué tristes senos tiene Carmela","el silicón le ha roto el corazón","y ahora llora como Ernesto","que se ha castrado por falta de amor"],"drummer_cues":["PREPARAR CORO DESPUÉS DE A"]},{"label":"CORO 2A","kind":"chorus","cues":[],"lines":["Aviéntame","Aviéntame hasta donde quieras","y luego ven a mirar como revivo"],"drummer_cues":[]},{"label":"CORO 2B","kind":"chorus","cues":[],"lines":["Aviéntame","Aviéntame hasta donde quieras","y luego ven a mirar como no muero","como aguanto"],"drummer_cues":[]},{"label":"SALIDA / SOLO","kind":"outro","cues":["SOLO: 1 VUELTA","FINAL"],"lines":["Aviéntame","Aviéntame"],"drummer_cues":["SOLO FINAL: 1 VUELTA"]}]},{"number":17,"title":"ROMPECABEZAS","notes":["[GUITARRAS] Iván hace la figura corta; Luis mantiene siempre la rítmica.","[VOZ] Marlon necesita más volumen."],"drummer_notes":[],"sections":[{"label":"INTRO 1","kind":"verse","cues":[],"lines":["Y todo lo que nunca fue","Y lo que no dejamos ser","Tratamos de taparlo con un dedo"],"drummer_cues":[]},{"label":"INTRO 2","kind":"verse","cues":[],"lines":["Y todo lo que nunca fue","Y lo que no dejamos ser","Tratamos de taparlo con un dedo"],"drummer_cues":[]},{"label":"VERSO 1","kind":"verse","cues":[],"lines":["Y sin embargo vuelvo a empezar","No tiene caso esperar","Nunca pensé en consecuencias","Ya no vuelve a pasar,","Ya no soporto los domingos","Son lo mismo son lo mismo,","Es una telenovela que no quiero mirar."],"drummer_cues":[]},{"label":"CORO 1","kind":"chorus","cues":["MARLON: MÁS VOLUMEN"],"lines":["¡Ay complot de mujer","Y lo encubre tu piel","Eres criminal y delator a la vez","Tratamos de taparlo con un dedo!"],"drummer_cues":[]},{"label":"VERSO 2","kind":"verse","cues":[],"lines":["Y sigue todo igual","Sigue lento sigue frío","Sigue sin parecer tener algo divino","Es un rompecabezas de miles de piezas","Que ya no quiero armar ya no pretendo armar,","no."],"drummer_cues":[]},{"label":"VERSO 3","kind":"verse","cues":[],"lines":["Y cuando pude estar seguro","De que sería yo ninguno","Volaste como arena con el viento","Y trataste de taparlo con un dedo Oh"],"drummer_cues":[]},{"label":"CORO 2","kind":"chorus","cues":["MARLON: MÁS VOLUMEN"],"lines":["¡Ay complot de mujer","Y lo encubre tu piel","Eres criminal y delator a la vez","Tratamos de taparlo con un dedo! Oh"],"drummer_cues":[]},{"label":"PUENTE 1","kind":"bridge","cues":[],"lines":["El complot de tu piel y tu forma de ser","Cometen ese crimen que se llama mujer","Y siempre lo tapamos con un dedo."],"drummer_cues":[]},{"label":"PUENTE 2","kind":"bridge","cues":[],"lines":["Ay complot de tu piel y tu forma de ser","Cometen ese crimen que se llama mujer","Y siempre lo tapamos con un dedo. Oh"],"drummer_cues":[]},{"label":"VERSO REPRISE","kind":"verse","cues":[],"lines":["Y sin embargo vuelvo a empezar","No tiene caso esperar","Nunca pensé en consecuencias","Ya no vuelve a pasar,","Ya no soporto los domingos","Son lo mismo son lo mismo,","Es una telenovela."],"drummer_cues":[]},{"label":"CORO FINAL","kind":"chorus","cues":["MARLON: MÁS VOLUMEN","FINAL"],"lines":["¡Ay complot de mujer","Y lo encubre tu piel","Eres criminal y delator a la vez","Tratamos de taparlo con un dedo! Oh"],"drummer_cues":[]}]},{"number":18,"title":"WITH OR WITHOUT YOU","notes":["[INTRO] Marlon dispara el efecto de teclado 'infinito'.","[PANDERO] Iván lo agrega en algunas partes; Héctor puede integrarlo en la batería si se decide.","[RIFF] Faltan reforzar las notas graves.","[SALIDA] Final a 2 guitarras."],"drummer_notes":["[HÉCTOR / PERCUSIÓN - POR CONFIRMAR] Definir si Héctor integra el pandero a la batería en las partes acordadas."],"sections":[{"label":"VERSO 1","kind":"verse","cues":["EFECTO 'INFINITO': MARLON"],"lines":["See the stone set in your eyes","See the thorn twist in your side","I'll wait for you"],"drummer_cues":[]},{"label":"VERSO 1B","kind":"verse","cues":[],"lines":["Sleight of hand and twist of fate","On a bed of nails she makes me wait","And I wait without you"],"drummer_cues":[]},{"label":"CORO 1","kind":"chorus","cues":[],"lines":["With or without you","With or without you"],"drummer_cues":[]},{"label":"VERSO 2","kind":"verse","cues":[],"lines":["Through the storm, we reach the shore","You give it all but I want more","And I'm waiting for you"],"drummer_cues":[]},{"label":"CORO 2","kind":"chorus","cues":[],"lines":["With or without you","With or without you, ah-ah","I can't live with or without you"],"drummer_cues":[]},{"label":"POSTCORO","kind":"bridge","cues":[],"lines":["And you give yourself away","And you give yourself away","And you give, and you give","And you give yourself away"],"drummer_cues":[]},{"label":"VERSO 3","kind":"verse","cues":[],"lines":["My hands are tied, my body bruised","She got me with nothing to win","And nothing left to lose"],"drummer_cues":[]},{"label":"POSTCORO","kind":"bridge","cues":[],"lines":["And you give yourself away","And you give yourself away","And you give, and you give","And you give yourself away"],"drummer_cues":[]},{"label":"CORO 3","kind":"chorus","cues":[],"lines":["With or without you","With or without you, ohh","I can't live with or without you"],"drummer_cues":[]},{"label":"VOCES","kind":"vocal","cues":[],"lines":["Oh oh oh oh","Oh oh oh oh","Oh oh oh oh"],"drummer_cues":[]},{"label":"CORO FINAL","kind":"chorus","cues":["FINAL A 2 GUITARRAS"],"lines":["With or without you","With or without you, ohh","I can't live with or without you"],"drummer_cues":[]},{"label":"CODA","kind":"outro","cues":[],"lines":["With or without you"],"drummer_cues":[]},{"label":"SALIDA","kind":"outro","cues":["FINAL"],"lines":["Uh","Uh"],"drummer_cues":[]}]},{"number":19,"title":"BILLIE JEAN","notes":["[BAJO] Lleva efecto.","[VOCES] Mucha atención y participación de las voces de apoyo para que la canción levante.","[ESTRUCTURA] Repasar las partes: en el ensayo se omitieron algunos pasajes."],"drummer_notes":["[BATERÍA / ESTRUCTURA] Repasar toda la secuencia; en el ensayo se omitieron algunos pasajes."],"sections":[{"label":"INTRO","kind":"vocal","cues":["BAJO CON EFECTO"],"lines":["(Hoo)"],"drummer_cues":[]},{"label":"VERSO 1A","kind":"verse","cues":[],"lines":["She was more like a beauty queen from a movie","scene","I said, \"Don't mind, but what do you mean? I am","the one","Who will dance on the floor in the round?\"","She said I am the one","Who will dance on the floor in the round"],"drummer_cues":[]},{"label":"VERSO 1B","kind":"verse","cues":[],"lines":["She told me her name was Billie Jean as she","caused a scene","Then every head turned with eyes that dreamed","of being the one","Who will dance on the floor in the round?"],"drummer_cues":[]},{"label":"PRECORO 1","kind":"prechorus","cues":[],"lines":["People always told me, \"Be careful what you do","Don't go around breaking young girls' hearts\"","(Hee)","And mother always told me, \"Be careful who you","love","Be careful what you do, 'cause the lie becomes","the truth\"","Hey-hey"],"drummer_cues":[]},{"label":"CORO 1","kind":"chorus","cues":["VOCES DE APOYO: ATENTAS"],"lines":["Billie Jean is not my lover","She's just a girl who claims that I am the one (Oh","baby)","But the kid is not my son (Whoo)","She says I am the one (Oh baby),","But the kid is not my son (Hee-hee-hee)","No, no (Hee-hee-hee)","(Woo)"],"drummer_cues":[]},{"label":"VERSO 2A","kind":"verse","cues":[],"lines":["For forty days and for forty nights, law was on","her side","But who can stand when she's in demand?","Her schemes and plans","'Cause we danced on the floor in the round","(Whoo)","So take my strong advice, just remember to","always think twice","(Don't think twice) (Don't think twice!) (Hoo)"],"drummer_cues":[]},{"label":"VERSO 2B","kind":"verse","cues":[],"lines":["She told my baby we'd danced 'til three, then","she looked at me","Then showed a photo, my baby crying, his eyes","were like mine (Oh no)","Though we danced on the floor in the round,","baby (Hee-hee-hee)"],"drummer_cues":[]},{"label":"PRECORO 2","kind":"prechorus","cues":[],"lines":["People always told me, \"Be careful what you do","And don't go around breaking young girls'","hearts\" (Hee)","But she came and stood right by me","And just smell the sweet perfume","This happened much too soon","She called me to her room","Hey-hey"],"drummer_cues":[]},{"label":"CORO 2","kind":"chorus","cues":["VOCES DE APOYO: ATENTAS"],"lines":["Billie Jean is not my lover (Hee)","She's just a girl who claims that I am the one (Oh","baby)","But the kid is not my son (No, no, no) (no-no-no,","no, no, no)","Billie Jean is not my lover","She's just a girl who claims that I am the one (Oh","baby)","But the kid is not my son (No, no)","She says I am the one (Oh baby),","But the kid is not my son (Hee-hee-hee)"],"drummer_cues":[]},{"label":"AD LIBS","kind":"vocal","cues":[],"lines":["Hee","Whoo"],"drummer_cues":[]},{"label":"CORO 3","kind":"chorus","cues":[],"lines":["She says I am the one, but the kid is not my son","(No, no, no)( whoo)","Billie Jean is not my lover","She's just a girl who claims that I am the one","(Hee-hee)","But the kid is not my son (No, no, no, no, no)","She says I am the one (Oh baby),","But the kid is not my son (No, no, no, no, no)","She says I am, (whoo)","(You know what you did)","She says he is my son","(Breaking my heart, babe)","She says I am the one"],"drummer_cues":[]},{"label":"CORO / SALIDA","kind":"chorus","cues":["NO SALTAR PARTES","FINAL"],"lines":["Billie Jean is not my lover","Billie Jean is not my lover","Billie Jean is not my lover","Billie Jean is... (Don't call me, Billie Jean, whoo)","Billie Jean is not my lover (Started such a scene)","Billie Jean is... (Ooh)"],"drummer_cues":["NO SALTAR PASAJES"]}]},{"number":20,"title":"EVERYBODY WANTS TO RULE THE WORLD","notes":["[BAJO] Lleva efecto.","[GUITARRAS] Iván marca acordes con chorus; Luis hace solos y notas con distorsión.","[POR CONFIRMAR - VOCES] Cantar a 2 voces todos los coros o reforzar únicamente el último."],"drummer_notes":[],"sections":[{"label":"VERSO 1","kind":"verse","cues":["BAJO CON EFECTO"],"lines":["Welcome to your life","There's no turning back","Even while we sleep","We will find you"],"drummer_cues":[]},{"label":"CORO 1","kind":"chorus","cues":["2 VOCES: CONFIRMAR"],"lines":["Acting on your best behaviour","Turn your back on mother nature","Everybody wants to rule the world"],"drummer_cues":[]},{"label":"VERSO 2","kind":"verse","cues":[],"lines":["It's my own design","It's my own remorse","Help me to decide","Help me make the"],"drummer_cues":[]},{"label":"CORO 2","kind":"chorus","cues":["2 VOCES: CONFIRMAR"],"lines":["Most of freedom and of pleasure","Nothing ever lasts forever","Everybody wants to rule the world"],"drummer_cues":[]},{"label":"PUENTE","kind":"bridge","cues":[],"lines":["There's a room where the light won't find you","Holding hands while the walls come tumbling","down","When they do I'll be right behind you"],"drummer_cues":[]},{"label":"CORO 3","kind":"chorus","cues":[],"lines":["So glad we've almost made it","So sad they had to fade it","Everybody wants to rule the world"],"drummer_cues":[]},{"label":"CORO 4","kind":"chorus","cues":[],"lines":["I can't stand this indecision","Married with a lack of vision","Everybody wants to rule the world"],"drummer_cues":[]},{"label":"CORO 5","kind":"chorus","cues":[],"lines":["Say that you'll never never never never need it","One headline why believe it?","Everybody wants to rule the world"],"drummer_cues":[]},{"label":"CORO FINAL","kind":"chorus","cues":["REFORZAR 2a VOZ","FINAL"],"lines":["All for freedom and for pleasure","Nothing ever lasts forever","Everybody wants to rule the world"],"drummer_cues":[]}]},{"number":21,"title":"A LITTLE RESPECT","notes":["[TECLADO - POR CONFIRMAR] Definir ejecución manual o sampler."],"drummer_notes":[],"sections":[{"label":"VERSO 1","kind":"verse","cues":["TECLADO: MANUAL VS SAMPLER"],"lines":["I try to discover","A little something to make me sweeter","Oh baby refrain from breaking my heart"],"drummer_cues":[]},{"label":"PRECORO 1","kind":"prechorus","cues":[],"lines":["I'm so in love with you","I'll be forever blue","That you give me no reason","Why you're making me work so hard"],"drummer_cues":[]},{"label":"BUILD 1","kind":"bridge","cues":[],"lines":["That you give me no","That you give me no","That you give me no","That you give me no"],"drummer_cues":[]},{"label":"CORO 1","kind":"chorus","cues":[],"lines":["Soul, I hear you calling","Oh baby please give a little respect to me"],"drummer_cues":[]},{"label":"VERSO 2","kind":"verse","cues":[],"lines":["And if I should falter","Would you open your arms out to me","We can make love not war","And live at peace with our hearts"],"drummer_cues":[]},{"label":"PRECORO 2","kind":"prechorus","cues":[],"lines":["I'm so in love with you","I'll be forever blue","What religion or reason","Could drive a man to forsake his lover"],"drummer_cues":[]},{"label":"BUILD 2","kind":"bridge","cues":[],"lines":["Don't you tell me no","Don't you tell me no","Don't you tell me no","Don't you tell me no"],"drummer_cues":[]},{"label":"CORO 2","kind":"chorus","cues":[],"lines":["Soul, I hear you calling","Oh baby please give a little respect to me"],"drummer_cues":[]},{"label":"PRECORO 3","kind":"prechorus","cues":[],"lines":["I'm so in love with you","I'll be forever blue","That you give me no reason","You know you're making me work so hard"],"drummer_cues":[]},{"label":"BUILD 3","kind":"bridge","cues":[],"lines":["That you give me no","That you give me no","That you give me no","That you give me no"],"drummer_cues":[]},{"label":"CORO 3","kind":"chorus","cues":[],"lines":["Soul, I hear you calling","Oh baby please (give a little respect)","Give a little respect to me"],"drummer_cues":[]},{"label":"CORO FINAL","kind":"chorus","cues":["FINAL"],"lines":["Soul, I hear you calling","Oh baby please (give a little respect)","Give a little respect to me"],"drummer_cues":[]}]},{"number":22,"title":"STARLIGHT","notes":["[BAJO] Usar el efecto principal de bajo.","[VERSO - POR CONFIRMAR] Valorar un efecto tipo aplauso."],"drummer_notes":["[HÉCTOR / EFECTO - POR CONFIRMAR] Valorar en el verso un efecto tipo aplauso."],"sections":[{"label":"VERSO 1","kind":"verse","cues":["EFECTO DE BAJO"],"lines":["Far away","This ship has taken me far away","Far away from the memories","Of the people who care if I live or die"],"drummer_cues":[]},{"label":"VERSO 2","kind":"verse","cues":[],"lines":["Starlight","I will be chasing a starlight","Until the end of my life","I don't know if it's worth it anymore"],"drummer_cues":[]},{"label":"REFRÁN 1","kind":"prechorus","cues":[],"lines":["Hold you in my arms","I just wanted to hold","You in my arms"],"drummer_cues":[]},{"label":"VERSO 3","kind":"verse","cues":["EFECTO TIPO APLAUSO: CONFIRMAR"],"lines":["My life","You electrify my life","Let's conspire to ignite","All the souls that would die just to feel alive"],"drummer_cues":["EFECTO APLAUSO: CONFIRMAR"]},{"label":"PUENTE","kind":"bridge","cues":[],"lines":["I'll never let you go","If you promise not to fade away","Never fade away"],"drummer_cues":[]},{"label":"CORO 1","kind":"chorus","cues":[],"lines":["Our hopes and expectations","Black holes and revelations","Our hopes and expectations","Black holes and revelations"],"drummer_cues":[]},{"label":"REFRÁN 2","kind":"prechorus","cues":[],"lines":["Hold you in my arms","I just wanted to hold","You in my arms"],"drummer_cues":[]},{"label":"VERSO FINAL","kind":"verse","cues":[],"lines":["Far away","This ship has taken me far away","Far away from the memories","Of the people who care if I live or die"],"drummer_cues":[]},{"label":"PUENTE FINAL","kind":"bridge","cues":[],"lines":["And I'll never let you go","If you promise not to fade away","Never fade away"],"drummer_cues":[]},{"label":"CORO FINAL","kind":"chorus","cues":[],"lines":["Our hopes and expectations","Black holes and revelations, yeah","Our hopes and expectations","Black holes and revelations"],"drummer_cues":[]},{"label":"SALIDA","kind":"outro","cues":["FINAL"],"lines":["Hold you in my arms","I just wanted to hold","You in my arms","I just wanted to hold"],"drummer_cues":[]}]},{"number":23,"title":"IN THE END","notes":["[VOCES] Revisar la segunda voz cuando la nota se alarga.","[GUITARRA] Iván hace la segunda guitarra cuando Marlon toca el riff."],"drummer_notes":[],"sections":[{"label":"INTRO","kind":"vocal","cues":[],"lines":["(It starts with one)"],"drummer_cues":[]},{"label":"VERSO 1A","kind":"verse","cues":[],"lines":["One thing I don't know why","It doesn't even matter how hard you try","Keep that in mind, I designed this rhyme","To explain in due time"],"drummer_cues":[]},{"label":"RESPUESTA","kind":"vocal","cues":[],"lines":["(All I know)"],"drummer_cues":[]},{"label":"VERSO 1B","kind":"verse","cues":[],"lines":["Time is a valuable thing","Watch it fly by as the pendulum swings","Watch it count down to the end of the day","The clock ticks life away"],"drummer_cues":[]},{"label":"RESPUESTA","kind":"vocal","cues":[],"lines":["(It's so unreal)"],"drummer_cues":[]},{"label":"VERSO 1C","kind":"verse","cues":[],"lines":["It's so unreal, didn't look out below","Watch the time go right out the window","Trying to hold on, but didn't even know","I wasted it all just to watch you go"],"drummer_cues":[]},{"label":"RESPUESTA","kind":"vocal","cues":[],"lines":["(Watch you go)"],"drummer_cues":[]},{"label":"PRECORO 1","kind":"prechorus","cues":["REVISAR 2a VOZ EN NOTA LARGA"],"lines":["I kept everything inside and even though I tried,","it all fell apart","What it meant to me will eventually be a","memory of a time","when I tried so hard"],"drummer_cues":[]},{"label":"CORO 1","kind":"chorus","cues":[],"lines":["I tried so hard","And got so far","But in the end","It doesn't even matter","I had to fall","To lose it all","But in the end","It doesn't even matter"],"drummer_cues":[]},{"label":"VERSO 2A","kind":"verse","cues":[],"lines":["One thing, I don't know why","It doesn't even matter how hard you try","Keep that in mind, I designed this rhyme","To remind myself how I tried so hard"],"drummer_cues":[]},{"label":"RESPUESTA","kind":"vocal","cues":[],"lines":["(I tried so hard)"],"drummer_cues":[]},{"label":"VERSO 2B","kind":"verse","cues":[],"lines":["In spite of the way you were mocking me","Acting like I was part of your property","Remembering all the times you fought with me","I'm surprised it got so far"],"drummer_cues":[]},{"label":"RESPUESTA","kind":"vocal","cues":[],"lines":["(Got so far)"],"drummer_cues":[]},{"label":"VERSO 2C","kind":"verse","cues":[],"lines":["Things aren't the way they were before","You wouldn't even recognize me anymore","Not that you knew me back then","But it all comes back to me in the end"],"drummer_cues":[]},{"label":"RESPUESTA","kind":"vocal","cues":[],"lines":["(In the end)"],"drummer_cues":[]},{"label":"PRECORO 2","kind":"prechorus","cues":["REVISAR 2a VOZ EN NOTA LARGA"],"lines":["You kept everything inside and even though I","tried, it all fell apart","What it meant to me will eventually be a","memory of a time","when I tried so hard"],"drummer_cues":[]},{"label":"CORO 2","kind":"chorus","cues":[],"lines":["I tried so hard","And got so far","But in the end","It doesn't even matter","I had to fall","To lose it all","But in the end","It doesn't even matter"],"drummer_cues":[]},{"label":"PUENTE 1","kind":"bridge","cues":[],"lines":["I've put my trust in you","Pushed as far as I can go","For all this","There's only one thing you should know"],"drummer_cues":[]},{"label":"PUENTE 2","kind":"bridge","cues":[],"lines":["I've put my trust in you","Pushed as far as I can go","For all this","There's only one thing you should know"],"drummer_cues":[]},{"label":"CORO FINAL","kind":"chorus","cues":["FINAL"],"lines":["I tried so hard","And got so far","But in the end","It doesn't even matter","I had to fall","To lose it all","But in the end","It doesn't even matter"],"drummer_cues":[]}]},{"number":24,"title":"DULCE SOLEDAD","notes":["[INTRO] Iván = rítmica; Luis = riff.","[VERSO 1 - POR CONFIRMAR] Confirmar si empieza Arturo. En la primera estrofa va solo el bajo.","[PRECORO] Solo una guitarra con distorsión.","[VERSO 2] Inicia solo el bajo; después entra la guitarra con distorsión.","[SALIDA] Figura de teclado y después guitarra."],"drummer_notes":["[BATERÍA - POR CONFIRMAR] La primera estrofa está anotada como 'solo bajo'; confirmar si Héctor permanece en silencio."],"sections":[{"label":"VERSO 1","kind":"verse","cues":["¿EMPIEZA ARTURO?","SOLO BAJO"],"lines":["Hoy bien pude estar acompañado","Romper el hielo donde estaba encerrado","Hoy bien pude haber conocido a algún amigo","Hoy bien pude haber dejado de estar contigo"],"drummer_cues":["¿BATERÍA EN SILENCIO?"]},{"label":"VERSO 1B","kind":"verse","cues":[],"lines":["Y observo a gente que está acompañada","Intercambian sonrisas, palabras y miradas","Se divierten, se entretienen, se enamoran lo sé","A todos veo y nadie me ve"],"drummer_cues":[]},{"label":"PRECORO 1","kind":"prechorus","cues":["SOLO 1 GUITARRA CON DISTORSIÓN"],"lines":["Pero en cambio a ti te tengo, mi fiel enamorada","Solo contigo me entretengo, me vigilas a mis","espaldas"],"drummer_cues":[]},{"label":"CORO 1","kind":"chorus","cues":[],"lines":["No cruzamos palabras, (siempre me","acompañas)","Juntos nos ocultamos (en las horas largas)","Ya que tu silencio (Dentro de tu identidad)","Te llamaré por sobre nombre mi dulce soledad"],"drummer_cues":[]},{"label":"VERSO 2","kind":"verse","cues":["INICIA SOLO BAJO","LUEGO ENTRA GUITARRA DISTORSIÓN"],"lines":["Y observo a gente que está acompañada","Intercambian sonrisas, palabras y miradas","Se divierten, se entretienen, se enamoran lo sé","A todos veo y nadie me ve"],"drummer_cues":[]},{"label":"PRECORO 2","kind":"prechorus","cues":["SOLO 1 GUITARRA CON DISTORSIÓN"],"lines":["Pero en cambio a ti te tengo, mi fiel enamorada","Solo contigo me entretengo, me vigilas a mis","espaldas"],"drummer_cues":[]},{"label":"CORO 2","kind":"chorus","cues":[],"lines":["No cruzamos palabras, (Siempre me","acompañas)","Juntos nos ocultamos (En las horas largas)","Ya que tu silencio (Dentro de tu identidad)","Te llamaré por sobre nombre mi dulce soledad"],"drummer_cues":[]},{"label":"SALIDA","kind":"outro","cues":["TECLADO → GUITARRA","FINAL"],"lines":["Dulce soledad"],"drummer_cues":[]}]},{"number":25,"title":"HERE WE KUM","notes":["[INTRO] Sample de Marlon.","[VOCES] Versos a 2 voces. En el coro pueden entrar más voces sin gritar; refuerzo solo en la primera frase 'Here we kum...'. La frase hablada final la hace una sola voz.","[INTER] Agregar batucada con efecto de Marlon."],"drummer_notes":["[BATERÍA / REFERENCIA] En el inter debe entrar la batucada con efecto de Marlon; ubicar el punto exacto en el ensayo."],"sections":[{"label":"VERSO 1","kind":"verse","cues":["2 VOCES"],"lines":["Si tú no aguantas vara en la carrilla que se carga","Te cagas en la leche y somos peor que leche","amarga","Y juntos celebramos si te enchilas o te ardes","No es que no nos importe, sino que nos vale","madres","El póngase flojito mientras yo lo pendejeo","Usté no diga frío no diga papa soy feo","Tiramos puro carro a ver a quien le queda el saco","Y si fumamos el tapete es porque se acabó el","tabaco, ¡guey!"],"drummer_cues":[]},{"label":"CORO 1","kind":"chorus","cues":["MÁS VOCES SOLO EN 1a FRASE","SIN GRITAR","CIERRE HABLADO: 1 VOZ"],"lines":["Here we kum and we don't care mucho","If you know what they wanna","They just want your tepalguana mana","Here we kum and we don't care nacha","Let's make varo varo hacer varo varo varo hacer","(Here comes la bomb so how you gonna stop it","now?)"],"drummer_cues":[]},{"label":"VERSO 2","kind":"verse","cues":["2 VOCES"],"lines":["Vamos a hacerte el paro haciendo un disco no","muy caro","Venimos decididos a quedarnos con tu varo","Vender miles de albums a los fresas we just","wanna","Rayarles sus ropitas y quedarnos con su lana","Encarreraderazos de bajada y sin frenos","Somos los feos y malos somos amigos del bueno","Somos los que en la playa chingan los planes","chingones","Somos los superchilangos entre tu y tus","vacaciones, ¡wey!"],"drummer_cues":[]},{"label":"CORO 2","kind":"chorus","cues":[],"lines":["Here we kum and we don't care mucho","If you know what they wanna","They just want your tepalguana mana","Here we kum and we don't care nacha","Let's make varo varo hacer varo varo varo hacer","(Here comes la bomb so how you gonna stop it","now?)"],"drummer_cues":[]},{"label":"CORO 3","kind":"chorus","cues":[],"lines":["Here we kum and we don't care mucho","If you know what they wanna","They just want your tepalguana mana","Here we kum and we don't care nacha","Let's make varo varo hacer varo varo varo hacer","(Here comes la bomb so how you gonna stop it","now?)"],"drummer_cues":[]},{"label":"CORO 4","kind":"chorus","cues":[],"lines":["Here we kum and we don't care mucho","If you know what they wanna","They just want your tepalguana mana","Here we kum and we don't care nacha","Let's make varo varo hacer varo varo varo hacer","(Here comes la bomb so how you gonna stop it","now?)"],"drummer_cues":[]},{"label":"CORO 5","kind":"chorus","cues":[],"lines":["Here we kum and we don't care mucho","If you know what they wanna","They just want your tepalguana mana","Here we kum and we don't care nacha","Let's make varo varo hacer varo varo varo","hacer","(Here comes la bomb so how you gonna stop it","now?)"],"drummer_cues":[]},{"label":"CODA 1","kind":"outro","cues":["FRASE HABLADA: 1 VOZ"],"lines":["Make varo varo hacer varo varo varo hacer","(Here comes la bomb so how you gonna stop it","now?)"],"drummer_cues":[]},{"label":"CODA 2","kind":"outro","cues":["FRASE HABLADA: 1 VOZ","FINAL"],"lines":["Make varo varo hacer varo varo varo hacer","(Here comes la bomb so how you gonna stop it","now?)"],"drummer_cues":[]}]},{"number":26,"title":"MI VIDA","notes":["[GUITARRA] Iván agrega segunda guitarra en intro y verso 2.","[CORO] Moderar el número y volumen de voces para evitar saturación."],"drummer_notes":[],"sections":[{"label":"VERSO 1A","kind":"verse","cues":["INTRO: IVÁN 2a GUITARRA"],"lines":["Que, al fin te lo han contado o no","Bueno ya conoces mis defectos","Si anduve con este y con aquel","Con esta y con aquella","Con esto y con aquello"],"drummer_cues":[]},{"label":"VERSO 1B","kind":"verse","cues":[],"lines":["Que, te vas a deshacer de mi","No, no digas nada te comprendo","Que temes que un hombre como yo","Te va a hacer mucho mal y eso no es cierto"],"drummer_cues":[]},{"label":"CORO 1","kind":"chorus","cues":["MODERAR VOCES"],"lines":["Yo he rodado de acá para allá","Fui de todo y sin medida","Pero te juro por dios que nunca llorarás","Por lo que fue mi vida"],"drummer_cues":[]},{"label":"VERSO 2A","kind":"verse","cues":["IVÁN 2a GUITARRA"],"lines":["Que, al fin te lo han contado amor","Seguro que te han dicho ten cuidado","Que un hombre que ha sido como yo","Acaba por volver a su pasado"],"drummer_cues":[]},{"label":"VERSO 2B","kind":"verse","cues":["IVÁN 2a GUITARRA"],"lines":["No, no puedo responder amor","Lo único que sé es que te amo","Y eso no hay fuerza ni ley","Que lo que pueda mover","Eso es sagrado"],"drummer_cues":[]},{"label":"CORO 2","kind":"chorus","cues":["MODERAR VOCES"],"lines":["Yo he rodado de acá para allá","Fui de todo y sin medida","Pero te juro por dios que nunca llorarás","Por lo que fue mi vida"],"drummer_cues":[]},{"label":"CORO FINAL","kind":"chorus","cues":["MODERAR VOCES","FINAL"],"lines":["Yo he rodado de acá para allá","Fui de todo y sin medida","Pero te juro por dios que tú no pagarás (Que tú","no pagarás)","Por lo que fue mi vida"],"drummer_cues":[]}]},{"number":27,"title":"CENIT","notes":["[VERSIÓN] Usar la versión en vivo.","[EFECTOS] Marlon agrega campanas; en la versión en vivo no se escuchan como en la original.","[GUITARRA] Iván apoya con acordes marcados.","[CORO] Corregir y revisar la entrada del coro observada en el ensayo.","[VERSO 2] Ya no lleva el riff inicial; va con acordes.","[BAJO] Permanece en silencio y entra después del segundo coro.","[SALIDA] Terminar como la versión normal."],"drummer_notes":["[BATERÍA / VERSIÓN] Seguir la estructura de la versión en vivo y terminar como la versión normal."],"sections":[{"label":"VERSO 1","kind":"verse","cues":["VERSIÓN EN VIVO","CAMPANAS: MARLON","BAJO EN SILENCIO"],"lines":["Creí cuando dijeron que la luna se dormía,","cuando salía el sol","Creí cuando dijeron que el diablo se escondía","husmeando en las esquinas de la habitación","Creí además porque dijeron las maestras miopes","que el sol no se veía de frente","Y yo me creí porque dijeron que la vida no existía","en la muerte"],"drummer_cues":[]},{"label":"CORO 1","kind":"chorus","cues":["REVISAR ENTRADA","BAJO EN SILENCIO"],"lines":["No, no quiero ser una sombra en el suelo","Quiero verme reflejado transparente","En los espacios y los cielos a la orilla de tus senos","Colgado como cuadro en las paredes de tu","vientre","Perdido en tus paisajes"],"drummer_cues":[]},{"label":"VOCES","kind":"vocal","cues":[],"lines":["Ah, ah ah"],"drummer_cues":[]},{"label":"VERSO 2","kind":"verse","cues":["SIN RIFF INICIAL","ACORDES MARCADOS"],"lines":["Creí cuando dijeron que otros mundos no vivían","y todo era lo que ves","Pensé que tu sonrisa era inagotable como el","agua hasta que casi se fue","Quería siempre más siempre lo siguiente y lo","que tuve lo olvidé","Creí que lo que amaba era en sí tu carne, pero","descubrí tu ser"],"drummer_cues":[]},{"label":"CORO 2","kind":"chorus","cues":["REVISAR ENTRADA","BAJO AÚN EN SILENCIO"],"lines":["No quiero ser una sombra en el suelo","Quiero verme reflejado transparente","En los espacios y los cielos a la orilla de tus senos","Colgado como cuadro en las paredes de tu","vientre","Vagando en tus rodillas"],"drummer_cues":[]},{"label":"VOCES / CUE","kind":"vocal","cues":["DESPUÉS DE AQUÍ ENTRA EL BAJO"],"lines":["Ah, ah ah","Ah, ah ah"],"drummer_cues":["REFERENCIA: DESPUÉS ENTRA BAJO"]},{"label":"CORO 3","kind":"chorus","cues":["ENTRA BAJO"],"lines":["No, no quiero ser una sombra en el suelo","Quiero verme reflejado transparente","En los espacios y los cielos a la orilla de tus senos","Colgado como cuadro en las paredes de tu","vientre","Vagando en tus rodillas","Creciendo por tus labios","Llegar al cenit pasional"],"drummer_cues":[]},{"label":"PUENTE","kind":"bridge","cues":[],"lines":["Y estallar el universo","En sangre y energía","Soy el cenit pasional"],"drummer_cues":[]},{"label":"CODA 1","kind":"outro","cues":[],"lines":["Estallando entre tus piernas","Creciendo por tus labios","Llegando al punto máximo de comunión, de","comunión","Yeeeh, yeeah"],"drummer_cues":[]},{"label":"VOCES","kind":"vocal","cues":[],"lines":["Yeeeh yeeeah yeeahh uuh","Yeeeh yeeeah yeeahh uuh","Yeeeh yeeeah yeeahh uuh"],"drummer_cues":[]},{"label":"SALIDA","kind":"outro","cues":["FINAL COMO VERSIÓN NORMAL"],"lines":["Estallando entre tus piernas","Ah ah ah","Yeeeh yeeeah yeeahh uuh"],"drummer_cues":[]}]},{"number":28,"title":"WHITE ROOM","artist":"Cream","status":"PENDIENTE","notes":["[ARTISTA] Cream","[PENDIENTE] Letra, estructura y referencias del arreglo por integrar."],"drummer_notes":["[PENDIENTE] Añadir referencias específicas para batería cuando se documente el arreglo del grupo."],"sections":[{"label":"PENDIENTE DE INTEGRAR","kind":"bridge","cues":["PENDIENTE"],"lines":["LETRA Y ESTRUCTURA PENDIENTES DE INTEGRAR"],"drummer_cues":[]}]},{"number":29,"title":"SMOKE ON THE WATER","artist":"Deep Purple","status":"PENDIENTE","notes":["[ARTISTA] Deep Purple","[PENDIENTE] Letra, estructura y referencias del arreglo por integrar."],"drummer_notes":["[PENDIENTE] Añadir referencias específicas para batería cuando se documente el arreglo del grupo."],"sections":[{"label":"PENDIENTE DE INTEGRAR","kind":"bridge","cues":["PENDIENTE"],"lines":["LETRA Y ESTRUCTURA PENDIENTES DE INTEGRAR"],"drummer_cues":[]}]},{"number":30,"title":"LA GRANGE","artist":"ZZ Top","status":"PENDIENTE","notes":["[ARTISTA] ZZ Top","[PENDIENTE] Letra, estructura y referencias del arreglo por integrar."],"drummer_notes":["[PENDIENTE] Añadir referencias específicas para batería cuando se documente el arreglo del grupo."],"sections":[{"label":"PENDIENTE DE INTEGRAR","kind":"bridge","cues":["PENDIENTE"],"lines":["LETRA Y ESTRUCTURA PENDIENTES DE INTEGRAR"],"drummer_cues":[]}]},{"number":31,"title":"BEDS ARE BURNING","artist":"Midnight Oil","status":"PENDIENTE","notes":["[ARTISTA] Midnight Oil","[PENDIENTE] Letra, estructura y referencias del arreglo por integrar."],"drummer_notes":["[PENDIENTE] Añadir referencias específicas para batería cuando se documente el arreglo del grupo."],"sections":[{"label":"PENDIENTE DE INTEGRAR","kind":"bridge","cues":["PENDIENTE"],"lines":["LETRA Y ESTRUCTURA PENDIENTES DE INTEGRAR"],"drummer_cues":[]}]},{"number":32,"title":"VIENTO","artist":"Caifanes","status":"PENDIENTE","notes":["[ARTISTA] Caifanes","[PENDIENTE] Letra, estructura y referencias del arreglo por integrar."],"drummer_notes":["[PENDIENTE] Añadir referencias específicas para batería cuando se documente el arreglo del grupo."],"sections":[{"label":"PENDIENTE DE INTEGRAR","kind":"bridge","cues":["PENDIENTE"],"lines":["LETRA Y ESTRUCTURA PENDIENTES DE INTEGRAR"],"drummer_cues":[]}]},{"number":33,"title":"JA, JA, JA","artist":"La Lupita","status":"PENDIENTE","notes":["[ARTISTA] La Lupita","[PENDIENTE] Letra, estructura y referencias del arreglo por integrar."],"drummer_notes":["[PENDIENTE] Añadir referencias específicas para batería cuando se documente el arreglo del grupo."],"sections":[{"label":"PENDIENTE DE INTEGRAR","kind":"bridge","cues":["PENDIENTE"],"lines":["LETRA Y ESTRUCTURA PENDIENTES DE INTEGRAR"],"drummer_cues":[]}]},{"number":34,"title":"HOLD THE LINE","artist":"TOTO","status":"PENDIENTE","notes":["[ARTISTA] TOTO","[PENDIENTE] Letra, estructura y referencias del arreglo por integrar."],"drummer_notes":["[PENDIENTE] Añadir referencias específicas para batería cuando se documente el arreglo del grupo."],"sections":[{"label":"PENDIENTE DE INTEGRAR","kind":"bridge","cues":["PENDIENTE"],"lines":["LETRA Y ESTRUCTURA PENDIENTES DE INTEGRAR"],"drummer_cues":[]}]},{"number":35,"title":"FRIDAY I'M IN LOVE","artist":"The Cure","status":"PENDIENTE","notes":["[ARTISTA] The Cure","[PENDIENTE] Letra, estructura y referencias del arreglo por integrar."],"drummer_notes":["[PENDIENTE] Añadir referencias específicas para batería cuando se documente el arreglo del grupo."],"sections":[{"label":"PENDIENTE DE INTEGRAR","kind":"bridge","cues":["PENDIENTE"],"lines":["LETRA Y ESTRUCTURA PENDIENTES DE INTEGRAR"],"drummer_cues":[]}]},{"number":36,"title":"HASH PIPE","artist":"Weezer","status":"PENDIENTE","notes":["[ARTISTA] Weezer","[PENDIENTE] Letra, estructura y referencias del arreglo por integrar."],"drummer_notes":["[PENDIENTE] Añadir referencias específicas para batería cuando se documente el arreglo del grupo."],"sections":[{"label":"PENDIENTE DE INTEGRAR","kind":"bridge","cues":["PENDIENTE"],"lines":["LETRA Y ESTRUCTURA PENDIENTES DE INTEGRAR"],"drummer_cues":[]}]},{"number":37,"title":"GUITARRAS BLANCAS","artist":"Los Enanitos Verdes","status":"PENDIENTE","notes":["[ARTISTA] Los Enanitos Verdes","[PENDIENTE] Letra, estructura y referencias del arreglo por integrar."],"drummer_notes":["[PENDIENTE] Añadir referencias específicas para batería cuando se documente el arreglo del grupo."],"sections":[{"label":"PENDIENTE DE INTEGRAR","kind":"bridge","cues":["PENDIENTE"],"lines":["LETRA Y ESTRUCTURA PENDIENTES DE INTEGRAR"],"drummer_cues":[]}]},{"number":38,"title":"GIMME THA POWER","artist":"Molotov","status":"PENDIENTE","notes":["[ARTISTA] Molotov","[PENDIENTE] Letra, estructura y referencias del arreglo por integrar."],"drummer_notes":["[PENDIENTE] Añadir referencias específicas para batería cuando se documente el arreglo del grupo."],"sections":[{"label":"PENDIENTE DE INTEGRAR","kind":"bridge","cues":["PENDIENTE"],"lines":["LETRA Y ESTRUCTURA PENDIENTES DE INTEGRAR"],"drummer_cues":[]}]},{"number":39,"title":"N.I.B.","artist":"Black Sabbath","status":"PENDIENTE","notes":["[ARTISTA] Black Sabbath","[PENDIENTE] Letra, estructura y referencias del arreglo por integrar."],"drummer_notes":["[PENDIENTE] Añadir referencias específicas para batería cuando se documente el arreglo del grupo."],"sections":[{"label":"PENDIENTE DE INTEGRAR","kind":"bridge","cues":["PENDIENTE"],"lines":["LETRA Y ESTRUCTURA PENDIENTES DE INTEGRAR"],"drummer_cues":[]}]},{"number":40,"title":"REBEL YELL","artist":"Billy Idol","status":"PENDIENTE","notes":["[ARTISTA] Billy Idol","[PENDIENTE] Letra, estructura y referencias del arreglo por integrar."],"drummer_notes":["[PENDIENTE] Añadir referencias específicas para batería cuando se documente el arreglo del grupo."],"sections":[{"label":"PENDIENTE DE INTEGRAR","kind":"bridge","cues":["PENDIENTE"],"lines":["LETRA Y ESTRUCTURA PENDIENTES DE INTEGRAR"],"drummer_cues":[]}]},{"number":41,"title":"DEVUÉLVEME A MI CHICA","artist":"Hombres G","status":"PENDIENTE","notes":["[ARTISTA] Hombres G","[PENDIENTE] Letra, estructura y referencias del arreglo por integrar."],"drummer_notes":["[PENDIENTE] Añadir referencias específicas para batería cuando se documente el arreglo del grupo."],"sections":[{"label":"PENDIENTE DE INTEGRAR","kind":"bridge","cues":["PENDIENTE"],"lines":["LETRA Y ESTRUCTURA PENDIENTES DE INTEGRAR"],"drummer_cues":[]}]},{"number":42,"title":"DON'T YOU (FORGET ABOUT ME)","artist":"Simple Minds","status":"PENDIENTE","notes":["[ARTISTA] Simple Minds","[PENDIENTE] Letra, estructura y referencias del arreglo por integrar."],"drummer_notes":["[PENDIENTE] Añadir referencias específicas para batería cuando se documente el arreglo del grupo."],"sections":[{"label":"PENDIENTE DE INTEGRAR","kind":"bridge","cues":["PENDIENTE"],"lines":["LETRA Y ESTRUCTURA PENDIENTES DE INTEGRAR"],"drummer_cues":[]}]},{"number":43,"title":"KILLING IN THE NAME","artist":"Rage Against The Machine","status":"PENDIENTE","notes":["[ARTISTA] Rage Against The Machine","[PENDIENTE] Letra, estructura y referencias del arreglo por integrar."],"drummer_notes":["[PENDIENTE] Añadir referencias específicas para batería cuando se documente el arreglo del grupo."],"sections":[{"label":"PENDIENTE DE INTEGRAR","kind":"bridge","cues":["PENDIENTE"],"lines":["LETRA Y ESTRUCTURA PENDIENTES DE INTEGRAR"],"drummer_cues":[]}]},{"number":44,"title":"ENTRE DOS TIERRAS","artist":"Héroes del Silencio","status":"PENDIENTE","notes":["[ARTISTA] Héroes del Silencio","[PENDIENTE] Letra, estructura y referencias del arreglo por integrar."],"drummer_notes":["[PENDIENTE] Añadir referencias específicas para batería cuando se documente el arreglo del grupo."],"sections":[{"label":"PENDIENTE DE INTEGRAR","kind":"bridge","cues":["PENDIENTE"],"lines":["LETRA Y ESTRUCTURA PENDIENTES DE INTEGRAR"],"drummer_cues":[]}]},{"number":45,"title":"EL SATÁNICO DR. CADILLAC","artist":"Los Fabulosos Cadillacs","status":"PENDIENTE","notes":["[ARTISTA] Los Fabulosos Cadillacs","[PENDIENTE] Letra, estructura y referencias del arreglo por integrar."],"drummer_notes":["[PENDIENTE] Añadir referencias específicas para batería cuando se documente el arreglo del grupo."],"sections":[{"label":"PENDIENTE DE INTEGRAR","kind":"bridge","cues":["PENDIENTE"],"lines":["LETRA Y ESTRUCTURA PENDIENTES DE INTEGRAR"],"drummer_cues":[]}]},{"number":46,"title":"QUEREME ASÍ","artist":"Los Caligaris / Jorge Serrano","status":"PENDIENTE","notes":["[ARTISTA] Los Caligaris / Jorge Serrano","[PENDIENTE] Letra, estructura y referencias del arreglo por integrar."],"drummer_notes":["[PENDIENTE] Añadir referencias específicas para batería cuando se documente el arreglo del grupo."],"sections":[{"label":"PENDIENTE DE INTEGRAR","kind":"bridge","cues":["PENDIENTE"],"lines":["LETRA Y ESTRUCTURA PENDIENTES DE INTEGRAR"],"drummer_cues":[]}]},{"number":47,"title":"YELLOW LEDBETTER","artist":"Pearl Jam","status":"PENDIENTE","notes":["[ARTISTA] Pearl Jam","[PENDIENTE] Letra, estructura y referencias del arreglo por integrar."],"drummer_notes":["[PENDIENTE] Añadir referencias específicas para batería cuando se documente el arreglo del grupo."],"sections":[{"label":"PENDIENTE DE INTEGRAR","kind":"bridge","cues":["PENDIENTE"],"lines":["LETRA Y ESTRUCTURA PENDIENTES DE INTEGRAR"],"drummer_cues":[]}]},{"number":48,"title":"EL FINAL","artist":"Rostros Ocultos","status":"PENDIENTE","notes":["[ARTISTA] Rostros Ocultos","[PENDIENTE] Letra, estructura y referencias del arreglo por integrar."],"drummer_notes":["[PENDIENTE] Añadir referencias específicas para batería cuando se documente el arreglo del grupo."],"sections":[{"label":"PENDIENTE DE INTEGRAR","kind":"bridge","cues":["PENDIENTE"],"lines":["LETRA Y ESTRUCTURA PENDIENTES DE INTEGRAR"],"drummer_cues":[]}]}]</script>
+  <script>
+    (() => {
+      "use strict";
+      const root = document.getElementById("cubaby-teleprompter");
+      const songs = JSON.parse(document.getElementById("cubaby-data").textContent);
+      const picker = document.getElementById("tele-song");
+      const view = document.getElementById("tele-song-view");
+      const playButton = document.getElementById("tele-play");
+      const prevButton = document.getElementById("tele-prev");
+      const nextButton = document.getElementById("tele-next");
+      const fullscreenButton = document.getElementById("tele-fullscreen");
+      const speedInput = document.getElementById("tele-speed");
+      const sizeInput = document.getElementById("tele-size");
+      const speedValue = document.getElementById("tele-speed-value");
+      const sizeValue = document.getElementById("tele-size-value");
+      const clickButton = document.getElementById("tele-click");
+      const bpmInput = document.getElementById("tele-bpm");
+      const tapButton = document.getElementById("tele-tap");
+      const clickVolumeInput = document.getElementById("tele-click-volume");
+      const clickVolumeValue = document.getElementById("tele-click-volume-value");
+      const accentInput = document.getElementById("tele-accent");
+      const clickStatus = document.getElementById("tele-click-status");
+      const liveSyncButton = document.getElementById("tele-live-sync");
+      const linePrevButton = document.getElementById("tele-line-prev");
+      const lineNextButton = document.getElementById("tele-line-next");
+      const liveSensitivityInput = document.getElementById("tele-live-sensitivity");
+      const liveSensitivityValue = document.getElementById("tele-live-sensitivity-value");
+      const liveStatus = document.getElementById("tele-live-status");
+      const liveDot = document.getElementById("tele-live-dot");
+      const liveBpmLabel = document.getElementById("tele-live-bpm");
+      const liveFactorLabel = document.getElementById("tele-live-factor");
+      const status = document.getElementById("tele-status");
+      const nowLabel = document.getElementById("tele-now");
+      const upNextLabel = document.getElementById("tele-up-next");
+      let currentIndex = Number(localStorage.getItem("cubaby-drummer-v2-song") || 0);
+      let playing = false;
+      let frameId = null;
+      let lastTime = 0;
+      let lastFocusTime = 0;
+      let scrollRemainder = 0;
+      let countdownTimer = null;
+      let wakeLock = null;
+      let lyricLines = [];
+      let songSections = [];
+      let activeLine = null;
+      let activeSection = null;
+      let focusScheduled = false;
+      let audioContext = null;
+      let metronomeTimer = null;
+      let nextClickTime = 0;
+      let beatInBar = 0;
+      let tapTimes = [];
+      let virtualPosition = null;
+
+      // SYNC VIVO: detector ligero de pulsos/transitorios desde el micrófono.
+      let liveSyncEnabled = false;
+      let liveStream = null;
+      let liveSource = null;
+      let liveAnalyser = null;
+      let liveFrameId = null;
+      let liveFreqData = null;
+      let liveEnergyHistory = [];
+      let liveBeatTimes = [];
+      let liveDetectedBpm = null;
+      let liveSmoothedBpm = null;
+      let liveLastBeatAt = 0;
+      let liveReferenceBpm = 120;
+      let liveSpeedFactor = 1;
+      let liveDotTimer = null;
+
+      const BPM_STORAGE_KEY = "cubaby-drummer-v3-bpm-by-song";
+      const VOLUME_STORAGE_KEY = "cubaby-drummer-v3-click-volume";
+      const ACCENT_STORAGE_KEY = "cubaby-drummer-v3-click-accent";
+      const LIVE_SENSITIVITY_KEY = "cubaby-drummer-v4-live-sensitivity";
+
+      if (!Number.isFinite(currentIndex) || currentIndex < 0 || currentIndex >= songs.length) currentIndex = 0;
+      speedInput.value = localStorage.getItem("cubaby-drummer-v2-speed") || "18";
+      sizeInput.value = localStorage.getItem("cubaby-drummer-v2-size") || "155";
+      clickVolumeInput.value = localStorage.getItem(VOLUME_STORAGE_KEY) || "65";
+      accentInput.checked = localStorage.getItem(ACCENT_STORAGE_KEY) !== "false";
+      liveSensitivityInput.value = localStorage.getItem(LIVE_SENSITIVITY_KEY) || "55";
+      liveSensitivityValue.textContent = liveSensitivityInput.value;
+
+      const escapeHtml = (value) => String(value)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+
+      function refreshControls() {
+        const size = Number(sizeInput.value);
+        root.style.setProperty("--lyrics-scale", String(size / 100));
+        speedValue.textContent = speedInput.value;
+        sizeValue.textContent = String(size);
+        localStorage.setItem("cubaby-drummer-v2-speed", speedInput.value);
+        localStorage.setItem("cubaby-drummer-v2-size", sizeInput.value);
+        if (playing && activeLine) virtualPosition = lineDocumentCenter(activeLine);
+      }
+
+      function clampBpm(value) {
+        const bpm = Math.round(Number(value));
+        if (!Number.isFinite(bpm)) return 120;
+        return Math.min(260, Math.max(30, bpm));
+      }
+
+      function readBpmMap() {
+        try {
+          const saved = JSON.parse(localStorage.getItem(BPM_STORAGE_KEY) || "{}");
+          return saved && typeof saved === "object" ? saved : {};
+        } catch (_) {
+          return {};
+        }
+      }
+
+      function saveCurrentBpm() {
+        const bpm = clampBpm(bpmInput.value);
+        bpmInput.value = String(bpm);
+        const saved = readBpmMap();
+        saved[String(songs[currentIndex].number)] = bpm;
+        localStorage.setItem(BPM_STORAGE_KEY, JSON.stringify(saved));
+        return bpm;
+      }
+
+      function loadCurrentBpm() {
+        const saved = readBpmMap();
+        bpmInput.value = String(clampBpm(saved[String(songs[currentIndex].number)] || 120));
+        beatInBar = 0;
+        tapTimes = [];
+        refreshClickStatus();
+      }
+
+      function refreshClickStatus(displayBeat = null) {
+        const bpm = clampBpm(bpmInput.value);
+        clickVolumeValue.textContent = clickVolumeInput.value;
+        localStorage.setItem(VOLUME_STORAGE_KEY, clickVolumeInput.value);
+        localStorage.setItem(ACCENT_STORAGE_KEY, String(accentInput.checked));
+        clickStatus.textContent = metronomeTimer
+          ? `${bpm} BPM · pulso ${displayBeat || beatInBar + 1}/4`
+          : `${bpm} BPM · detenido`;
+      }
+
+      function ensureAudioContext() {
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContextClass) {
+          status.textContent = "Este navegador no permite generar el click de audio.";
+          return null;
+        }
+        if (!audioContext) audioContext = new AudioContextClass();
+        if (audioContext.state === "suspended") audioContext.resume().catch(() => {});
+        return audioContext;
+      }
+
+      function scheduleTone(time, accented) {
+        const context = ensureAudioContext();
+        if (!context) return;
+        const oscillator = context.createOscillator();
+        const gain = context.createGain();
+        const volume = Number(clickVolumeInput.value) / 100;
+        oscillator.type = "sine";
+        oscillator.frequency.setValueAtTime(accented ? 1500 : 950, time);
+        gain.gain.setValueAtTime(Math.max(0.0001, volume * (accented ? 0.28 : 0.18)), time);
+        gain.gain.exponentialRampToValueAtTime(0.0001, time + 0.045);
+        oscillator.connect(gain);
+        gain.connect(context.destination);
+        oscillator.start(time);
+        oscillator.stop(time + 0.05);
+      }
+
+      function runMetronomeScheduler() {
+        if (!metronomeTimer || !audioContext) return;
+        const secondsPerBeat = 60 / clampBpm(bpmInput.value);
+        let guard = 0;
+        while (nextClickTime < audioContext.currentTime + 0.12 && guard < 8) {
+          const displayBeat = beatInBar + 1;
+          scheduleTone(nextClickTime, accentInput.checked && beatInBar === 0);
+          refreshClickStatus(displayBeat);
+          beatInBar = (beatInBar + 1) % 4;
+          nextClickTime += secondsPerBeat;
+          guard += 1;
+        }
+      }
+
+      function startMetronome() {
+        if (metronomeTimer) return;
+        const context = ensureAudioContext();
+        if (!context) return;
+        saveCurrentBpm();
+        beatInBar = 0;
+        nextClickTime = context.currentTime + 0.04;
+        metronomeTimer = window.setInterval(runMetronomeScheduler, 25);
+        clickButton.textContent = "Click: activo";
+        clickButton.setAttribute("aria-pressed", "true");
+        runMetronomeScheduler();
+        requestWakeLock();
+      }
+
+      function stopMetronome() {
+        if (metronomeTimer) window.clearInterval(metronomeTimer);
+        metronomeTimer = null;
+        beatInBar = 0;
+        clickButton.textContent = "Click: apagado";
+        clickButton.setAttribute("aria-pressed", "false");
+        refreshClickStatus();
+        if (!playing && wakeLock) {
+          wakeLock.release().catch(() => {});
+          wakeLock = null;
+        }
+      }
+
+      function toggleMetronome() {
+        if (metronomeTimer) {
+          stopMetronome();
+          status.textContent = "Click detenido. El lector permanece en su posición.";
+        } else {
+          startMetronome();
+          if (metronomeTimer) status.textContent = `Click activo a ${clampBpm(bpmInput.value)} BPM. Pulsa Click para detenerlo.`;
+        }
+      }
+
+      function resetMetronomePhase() {
+        if (!metronomeTimer || !audioContext) return;
+        beatInBar = 0;
+        nextClickTime = audioContext.currentTime + 0.04;
+      }
+
+      function applyBpm() {
+        saveCurrentBpm();
+        resetMetronomePhase();
+        refreshClickStatus();
+      }
+
+      function tapTempo() {
+        const now = performance.now();
+        if (tapTimes.length && now - tapTimes[tapTimes.length - 1] > 2000) tapTimes = [];
+        tapTimes.push(now);
+        tapTimes = tapTimes.slice(-6);
+        const context = ensureAudioContext();
+        if (context) scheduleTone(context.currentTime + 0.01, true);
+        if (tapTimes.length >= 2) {
+          const intervals = tapTimes.slice(1).map((time, index) => time - tapTimes[index]);
+          const average = intervals.reduce((sum, interval) => sum + interval, 0) / intervals.length;
+          bpmInput.value = String(clampBpm(60000 / average));
+          applyBpm();
+          status.textContent = `Tap Tempo: ${bpmInput.value} BPM guardados para ${songs[currentIndex].title}.`;
+        } else {
+          status.textContent = "Tap Tempo: da al menos dos golpes siguiendo el pulso.";
+        }
+      }
+
+
+      function median(values) {
+        if (!values.length) return null;
+        const sorted = [...values].sort((a, b) => a - b);
+        const middle = Math.floor(sorted.length / 2);
+        return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+      }
+
+      function normalizeTempo(bpm) {
+        if (!Number.isFinite(bpm)) return null;
+        let value = bpm;
+        while (value < 65) value *= 2;
+        while (value > 190) value /= 2;
+        return Math.max(45, Math.min(220, value));
+      }
+
+      function updateLiveDisplay() {
+        liveSensitivityValue.textContent = liveSensitivityInput.value;
+        localStorage.setItem(LIVE_SENSITIVITY_KEY, liveSensitivityInput.value);
+        liveBpmLabel.textContent = liveSmoothedBpm ? `${Math.round(liveSmoothedBpm)} BPM` : "— BPM";
+        liveFactorLabel.textContent = `×${liveSpeedFactor.toFixed(2)}`;
+        if (!liveSyncEnabled) {
+          liveStatus.querySelector("span:nth-child(2)").textContent = "Micro apagado";
+          liveDot.classList.remove("is-listening", "is-beat");
+        } else {
+          liveStatus.querySelector("span:nth-child(2)").textContent = liveSmoothedBpm ? "Escuchando" : "Buscando pulso…";
+          liveDot.classList.add("is-listening");
+        }
+      }
+
+      function pulseLiveDot() {
+        liveDot.classList.remove("is-beat");
+        void liveDot.offsetWidth;
+        liveDot.classList.add("is-beat");
+        if (liveDotTimer) window.clearTimeout(liveDotTimer);
+        liveDotTimer = window.setTimeout(() => liveDot.classList.remove("is-beat"), 190);
+      }
+
+      function recomputeLiveTempo(nowMs) {
+        // Conserva pulsos de los últimos ~10 s y usa intervalos plausibles.
+        liveBeatTimes = liveBeatTimes.filter((time) => nowMs - time < 10000).slice(-18);
+        if (liveBeatTimes.length < 4) return;
+        const intervals = [];
+        for (let i = 1; i < liveBeatTimes.length; i += 1) {
+          const interval = liveBeatTimes[i] - liveBeatTimes[i - 1];
+          if (interval >= 280 && interval <= 1400) intervals.push(interval);
+        }
+        if (intervals.length < 3) return;
+        const med = median(intervals);
+        if (!med) return;
+        const filtered = intervals.filter((interval) => Math.abs(interval - med) <= med * 0.24);
+        const stableInterval = median(filtered.length >= 2 ? filtered : intervals);
+        const bpm = normalizeTempo(60000 / stableInterval);
+        if (!bpm) return;
+        liveDetectedBpm = bpm;
+        liveSmoothedBpm = liveSmoothedBpm == null ? bpm : (liveSmoothedBpm * 0.82 + bpm * 0.18);
+        const rawFactor = liveSmoothedBpm / Math.max(30, liveReferenceBpm);
+        // Evita saltos bruscos del texto incluso si el detector toma doble/medio tiempo.
+        const targetFactor = Math.max(0.72, Math.min(1.38, rawFactor));
+        liveSpeedFactor = liveSpeedFactor * 0.84 + targetFactor * 0.16;
+      }
+
+      function liveAudioLoop(time) {
+        if (!liveSyncEnabled || !liveAnalyser || !liveFreqData) return;
+        liveAnalyser.getByteFrequencyData(liveFreqData);
+        const sampleRate = audioContext ? audioContext.sampleRate : 48000;
+        const nyquist = sampleRate / 2;
+        const hzPerBin = nyquist / liveFreqData.length;
+        // Banda 45–220 Hz: normalmente contiene bombo/bajo y da pulsos más útiles en ensayo.
+        const startBin = Math.max(1, Math.floor(45 / hzPerBin));
+        const endBin = Math.min(liveFreqData.length - 1, Math.ceil(220 / hzPerBin));
+        let sum = 0;
+        let count = 0;
+        for (let i = startBin; i <= endBin; i += 1) {
+          const value = liveFreqData[i] / 255;
+          sum += value * value;
+          count += 1;
+        }
+        const energy = count ? Math.sqrt(sum / count) : 0;
+        liveEnergyHistory.push(energy);
+        if (liveEnergyHistory.length > 72) liveEnergyHistory.shift();
+        const baseline = liveEnergyHistory.length >= 8
+          ? liveEnergyHistory.reduce((total, value) => total + value, 0) / liveEnergyHistory.length
+          : energy;
+        const sensitivity = Number(liveSensitivityInput.value) / 100;
+        // Mayor sensibilidad => umbral más bajo. Piso evita disparos por ruido constante.
+        const thresholdMultiplier = 1.95 - sensitivity * 0.85;
+        const threshold = Math.max(0.055, baseline * thresholdMultiplier);
+        const nowMs = performance.now();
+        const refractory = 245;
+        if (liveEnergyHistory.length >= 8 && energy > threshold && nowMs - liveLastBeatAt > refractory) {
+          liveLastBeatAt = nowMs;
+          liveBeatTimes.push(nowMs);
+          recomputeLiveTempo(nowMs);
+          pulseLiveDot();
+          updateLiveDisplay();
+        }
+        liveFrameId = requestAnimationFrame(liveAudioLoop);
+      }
+
+      async function startLiveSync() {
+        if (liveSyncEnabled) return;
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          status.textContent = "SYNC VIVO requiere un navegador con acceso al micrófono (HTTPS o contexto permitido).";
+          return;
+        }
+        try {
+          const context = ensureAudioContext();
+          if (!context) return;
+          liveStream = await navigator.mediaDevices.getUserMedia({
+            audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+            video: false
+          });
+          liveSource = context.createMediaStreamSource(liveStream);
+          liveAnalyser = context.createAnalyser();
+          liveAnalyser.fftSize = 2048;
+          liveAnalyser.smoothingTimeConstant = 0.30;
+          liveFreqData = new Uint8Array(liveAnalyser.frequencyBinCount);
+          liveSource.connect(liveAnalyser); // No se conecta a destination: evita feedback.
+          liveReferenceBpm = clampBpm(bpmInput.value);
+          liveDetectedBpm = null;
+          liveSmoothedBpm = null;
+          liveSpeedFactor = 1;
+          liveBeatTimes = [];
+          liveEnergyHistory = [];
+          liveLastBeatAt = 0;
+          liveSyncEnabled = true;
+          liveSyncButton.textContent = "Sync vivo: activo";
+          liveSyncButton.setAttribute("aria-pressed", "true");
+          updateLiveDisplay();
+          liveFrameId = requestAnimationFrame(liveAudioLoop);
+          status.textContent = `SYNC VIVO activo. Referencia: ${liveReferenceBpm} BPM. Toca unos compases para estabilizar la detección.`;
+          requestWakeLock();
+        } catch (error) {
+          stopLiveSync(false);
+          const detail = error && error.name ? ` (${error.name})` : "";
+          let frameNote = "";
+          try { if (window.top !== window.self) frameNote = " Este visor está embebido y puede bloquear el micrófono; prueba la PWA o la app instalada."; } catch (_) { frameNote = " Este visor puede estar bloqueando el micrófono; prueba la PWA o la app instalada."; }
+          status.textContent = `No se pudo activar el micrófono${detail}.${frameNote || " Revisa el permiso del navegador."}`;
+        }
+      }
+
+      function stopLiveSync(showStatus = true) {
+        liveSyncEnabled = false;
+        if (liveFrameId !== null) cancelAnimationFrame(liveFrameId);
+        liveFrameId = null;
+        if (liveSource) {
+          try { liveSource.disconnect(); } catch (_) {}
+        }
+        if (liveStream) liveStream.getTracks().forEach((track) => track.stop());
+        liveStream = null;
+        liveSource = null;
+        liveAnalyser = null;
+        liveFreqData = null;
+        liveEnergyHistory = [];
+        liveBeatTimes = [];
+        liveDetectedBpm = null;
+        liveSmoothedBpm = null;
+        liveSpeedFactor = 1;
+        liveSyncButton.textContent = "Sync vivo: apagado";
+        liveSyncButton.setAttribute("aria-pressed", "false");
+        updateLiveDisplay();
+        if (showStatus) status.textContent = "SYNC VIVO apagado. El lector vuelve a la velocidad fija.";
+      }
+
+      function toggleLiveSync() {
+        if (liveSyncEnabled) stopLiveSync();
+        else startLiveSync();
+      }
+
+      function jumpLyricLine(delta) {
+        if (!lyricLines.length) return;
+        let index = activeLine ? lyricLines.indexOf(activeLine) : 0;
+        if (index < 0) index = 0;
+        const nextIndex = Math.max(0, Math.min(lyricLines.length - 1, index + delta));
+        const target = lyricLines[nextIndex];
+        virtualPosition = lineDocumentCenter(target);
+        const targetScroll = Math.max(0, virtualPosition - window.innerHeight * 0.56);
+        window.scrollTo({top: targetScroll, behavior: "auto"});
+        updateFocus(virtualPosition);
+        status.textContent = `${delta > 0 ? "Avance" : "Retroceso"} manual: línea ${nextIndex + 1} de ${lyricLines.length}.`;
+      }
+
+      function renderSong(index, scroll = true) {
+        currentIndex = (index + songs.length) % songs.length;
+        localStorage.setItem("cubaby-drummer-v2-song", String(currentIndex));
+        picker.value = String(currentIndex);
+        loadCurrentBpm();
+        const song = songs[currentIndex];
+        const notes = song.notes.length
+          ? `<ul class="song-notes">${song.notes.map((note) => `<li>${escapeHtml(note)}</li>`).join("")}</ul>`
+          : "";
+        const personalView = (window.cubabyViewMode || "band") === "personal";
+        const drummerNotes = personalView
+          ? (song.drummer_notes.length
+              ? `<div class="card drummer-notes"><span class="drummer-notes-label">MI VISTA · HÉCTOR · BATERÍA</span><ul>${song.drummer_notes.map((note) => `<li>${escapeHtml(note)}</li>`).join("")}</ul></div>`
+              : `<div class="card drummer-notes"><span class="drummer-notes-label">MI VISTA · HÉCTOR · BATERÍA</span><div class="text-small text-muted">Sin una indicación adicional documentada. Usa AHORA y SIGUE como referencia estructural.</div></div>`)
+          : "";
+        const sections = song.sections.map((section, sectionIndex) => {
+          const cues = section.cues.map((cue) => `<span class="viz-badge">${escapeHtml(cue)}</span>`).join("");
+          const drummerCues = personalView ? section.drummer_cues.map((cue) => `<span class="viz-badge">BATERÍA: ${escapeHtml(cue)}</span>`).join("") : "";
+          const lines = section.lines.map((line) => `<div class="lyric-line">${escapeHtml(line)}</div>`).join("");
+          return `<section class="song-section ${escapeHtml(section.kind)}" data-section-index="${sectionIndex}"><div class="section-heading"><span class="section-label">[AHORA] ${escapeHtml(section.label)}</span>${drummerCues}${cues}</div>${lines}</section>`;
+        }).join("");
+        view.innerHTML = `<h2 class="song-heading">${String(song.number).padStart(2, "0")} · ${escapeHtml(song.title)}</h2>${drummerNotes}${notes}${sections}`;
+        lyricLines = Array.from(view.querySelectorAll(".lyric-line"));
+        songSections = Array.from(view.querySelectorAll(".song-section"));
+        activeLine = null;
+        activeSection = null;
+        virtualPosition = null;
+        if (liveSyncEnabled) {
+          liveReferenceBpm = clampBpm(bpmInput.value);
+          liveDetectedBpm = null;
+          liveSmoothedBpm = null;
+          liveSpeedFactor = 1;
+          liveBeatTimes = [];
+          liveEnergyHistory = [];
+          updateLiveDisplay();
+        }
+        status.textContent = `Canción ${song.number} de ${songs.length}. Cambio de canción solo manual.`;
+        if (scroll) root.scrollIntoView({behavior: "auto", block: "start"});
+        if (lyricLines.length) updateFocus(lineDocumentCenter(lyricLines[0]));
+      }
+
+      function lineDocumentCenter(line) {
+        const rect = line.getBoundingClientRect();
+        return rect.top + window.scrollY + rect.height / 2;
+      }
+
+      function updateFocus(targetDocumentY = null) {
+        if (!lyricLines.length) return;
+        const focusDocumentY = targetDocumentY === null
+          ? window.scrollY + window.innerHeight * 0.56
+          : targetDocumentY;
+        let best = lyricLines[0];
+        let bestDistance = Infinity;
+        lyricLines.forEach((line) => {
+          const distance = Math.abs(lineDocumentCenter(line) - focusDocumentY);
+          if (distance < bestDistance) {
+            best = line;
+            bestDistance = distance;
+          }
+        });
+        if (activeLine !== best) {
+          if (activeLine) activeLine.classList.remove("is-active");
+          activeLine = best;
+          activeLine.classList.add("is-active");
+        }
+        const section = best.closest(".song-section");
+        if (activeSection !== section) {
+          if (activeSection) activeSection.classList.remove("is-active-section");
+          activeSection = section;
+          if (activeSection) activeSection.classList.add("is-active-section");
+        }
+        if (!activeSection) return;
+        const sectionIndex = Number(activeSection.dataset.sectionIndex);
+        const song = songs[currentIndex];
+        nowLabel.textContent = song.sections[sectionIndex].label;
+        upNextLabel.textContent = sectionIndex + 1 < song.sections.length
+          ? song.sections[sectionIndex + 1].label
+          : "FIN DE CANCIÓN";
+      }
+
+      function scheduleFocusUpdate() {
+        if (focusScheduled) return;
+        focusScheduled = true;
+        requestAnimationFrame(() => {
+          focusScheduled = false;
+          updateFocus();
+        });
+      }
+
+      async function requestWakeLock() {
+        if (!("wakeLock" in navigator)) return;
+        if (wakeLock) return;
+        try {
+          wakeLock = await navigator.wakeLock.request("screen");
+        } catch (_) {
+          wakeLock = null;
+        }
+      }
+
+      function stop(reason = "Pausado.") {
+        if (countdownTimer) {
+          window.clearInterval(countdownTimer);
+          countdownTimer = null;
+        }
+        playing = false;
+        if (frameId !== null) cancelAnimationFrame(frameId);
+        frameId = null;
+        lastTime = 0;
+        lastFocusTime = 0;
+        scrollRemainder = 0;
+        stopMetronome();
+        playButton.textContent = "Continuar";
+        status.textContent = reason;
+        if (wakeLock) {
+          wakeLock.release().catch(() => {});
+          wakeLock = null;
+        }
+      }
+
+      function tick(time) {
+        if (!playing) return;
+        if (!lastTime) lastTime = time;
+        let elapsed = (time - lastTime) / 1000;
+        lastTime = time;
+        if (!Number.isFinite(elapsed) || elapsed < 0 || elapsed > 0.5) elapsed = 0;
+        const adaptiveFactor = liveSyncEnabled && liveSmoothedBpm ? liveSpeedFactor : 1;
+        const distance = Number(speedInput.value) * adaptiveFactor * elapsed;
+        if (liveSyncEnabled && liveSmoothedBpm) liveFactorLabel.textContent = `×${adaptiveFactor.toFixed(2)}`;
+        if (virtualPosition === null) {
+          virtualPosition = lineDocumentCenter(activeLine || lyricLines[0]);
+        }
+        virtualPosition += distance;
+        scrollRemainder += distance;
+        const pixels = Math.floor(scrollRemainder);
+        if (pixels > 0) {
+          window.scrollBy(0, pixels);
+          scrollRemainder -= pixels;
+        }
+        if (time - lastFocusTime >= 120) {
+          updateFocus(virtualPosition);
+          lastFocusTime = time;
+        }
+        const lastLine = lyricLines[lyricLines.length - 1];
+        const lastRect = lastLine.getBoundingClientRect();
+        const trueEnd = lineDocumentCenter(lastLine) + Math.max(36, lastRect.height * 1.5);
+        if (virtualPosition >= trueEnd) {
+          virtualPosition = lineDocumentCenter(lastLine);
+          updateFocus(virtualPosition);
+          stop("Fin de canción. Selecciona Siguiente cuando estén listos.");
+          return;
+        }
+        frameId = requestAnimationFrame(tick);
+      }
+
+      function startNow() {
+        if (playing) return;
+        if (!lyricLines.length) {
+          status.textContent = "Esta canción no contiene líneas para marcar.";
+          return;
+        }
+        playing = true;
+        playButton.textContent = "Pausar";
+        status.textContent = liveSyncEnabled
+          ? "Marcación activa con SYNC VIVO: la velocidad seguirá el pulso detectado y Línea −/+ permite corregir la posición."
+          : "Marcación y desplazamiento activos. La referencia continuará aunque la canción ya esté completa en pantalla.";
+        lastTime = 0;
+        lastFocusTime = 0;
+        scrollRemainder = 0;
+        virtualPosition = lineDocumentCenter(activeLine || lyricLines[0]);
+        requestWakeLock();
+        frameId = requestAnimationFrame(tick);
+      }
+
+      function beginCountdown(seconds = 3) {
+        if (countdownTimer) window.clearInterval(countdownTimer);
+        let remaining = seconds;
+        status.innerHTML = `<span class="countdown">Inicia en ${remaining}...</span>`;
+        countdownTimer = window.setInterval(() => {
+          remaining -= 1;
+          if (remaining <= 0) {
+            window.clearInterval(countdownTimer);
+            countdownTimer = null;
+            startNow();
+          } else {
+            status.innerHTML = `<span class="countdown">Inicia en ${remaining}...</span>`;
+          }
+        }, 1000);
+      }
+
+      function togglePlay() {
+        if (countdownTimer) {
+          stop("Inicio cancelado.");
+          return;
+        }
+        if (playing) stop();
+        else beginCountdown(3);
+      }
+
+      function changeSong(delta) {
+        stop("Cambio de canción.");
+        renderSong(currentIndex + delta);
+      }
+
+      songs.forEach((song, index) => {
+        const option = document.createElement("option");
+        option.value = String(index);
+        option.textContent = `${String(song.number).padStart(2, "0")} · ${song.title}`;
+        picker.appendChild(option);
+      });
+
+      picker.addEventListener("change", () => {
+        stop("Cambio de canción.");
+        renderSong(Number(picker.value));
+      });
+
+      document.addEventListener("cubaby-view-mode", () => {
+        renderSong(currentIndex, false);
+        const strip = root.querySelector(".drummer-strip");
+        if (strip) strip.style.display = (window.cubabyViewMode || "band") === "personal" ? "grid" : "none";
+      });
+      playButton.addEventListener("click", togglePlay);
+      prevButton.addEventListener("click", () => changeSong(-1));
+      nextButton.addEventListener("click", () => changeSong(1));
+      speedInput.addEventListener("input", refreshControls);
+      sizeInput.addEventListener("input", refreshControls);
+      clickButton.addEventListener("click", toggleMetronome);
+      bpmInput.addEventListener("change", applyBpm);
+      tapButton.addEventListener("click", tapTempo);
+      clickVolumeInput.addEventListener("input", refreshClickStatus);
+      accentInput.addEventListener("change", refreshClickStatus);
+      liveSyncButton.addEventListener("click", toggleLiveSync);
+      linePrevButton.addEventListener("click", () => jumpLyricLine(-1));
+      lineNextButton.addEventListener("click", () => jumpLyricLine(1));
+      liveSensitivityInput.addEventListener("input", updateLiveDisplay);
+      fullscreenButton.addEventListener("click", async () => {
+        try {
+          if (!document.fullscreenElement) await document.documentElement.requestFullscreen();
+          else await document.exitFullscreen();
+        } catch (_) {
+          status.textContent = "El navegador no permitió pantalla completa.";
+        }
+      });
+      window.addEventListener("scroll", () => {
+        if (!playing) scheduleFocusUpdate();
+      }, {passive: true});
+      window.addEventListener("resize", () => {
+        lastTime = 0;
+        if (playing && activeLine) virtualPosition = lineDocumentCenter(activeLine);
+        scheduleFocusUpdate();
+      }, {passive: true});
+      document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState !== "visible" && (playing || countdownTimer || metronomeTimer)) {
+          stop("Pausado porque el navegador dejó de estar activo. Pulsa Continuar.");
+        }
+      });
+      window.addEventListener("pagehide", () => {
+        stop("Pausado.");
+        stopLiveSync(false);
+      });
+      document.addEventListener("keydown", (event) => {
+        const tag = event.target && event.target.tagName;
+        if (tag === "INPUT" || tag === "SELECT") return;
+        if (event.code === "Space") {
+          event.preventDefault();
+          togglePlay();
+        } else if (event.code === "ArrowRight" || event.code === "PageDown") {
+          event.preventDefault();
+          changeSong(1);
+        } else if (event.code === "ArrowLeft" || event.code === "PageUp") {
+          event.preventDefault();
+          changeSong(-1);
+        } else if (event.code === "ArrowUp") {
+          event.preventDefault();
+          speedInput.value = String(Math.min(Number(speedInput.max), Number(speedInput.value) + 1));
+          refreshControls();
+        } else if (event.code === "ArrowDown") {
+          event.preventDefault();
+          speedInput.value = String(Math.max(Number(speedInput.min), Number(speedInput.value) - 1));
+          refreshControls();
+        } else if (event.code === "KeyC") {
+          event.preventDefault();
+          toggleMetronome();
+        } else if (event.code === "KeyT") {
+          event.preventDefault();
+          tapTempo();
+        } else if (event.code === "KeyV") {
+          event.preventDefault();
+          toggleLiveSync();
+        } else if (event.code === "BracketRight") {
+          event.preventDefault();
+          jumpLyricLine(1);
+        } else if (event.code === "BracketLeft") {
+          event.preventDefault();
+          jumpLyricLine(-1);
+        }
+      });
+
+      refreshControls();
+      updateLiveDisplay();
+      renderSong(currentIndex, false);
+    })();
+  </script>
+</div>
+<script id="codex-visualization-tooltip">/* oxlint-disable typescript/no-unsafe-argument, typescript/no-unsafe-call, typescript/no-unsafe-return */
+// Runs inside the visualization sandbox, not the host webview.
+(() => {
+  if (window.FloatingUIDOM == null) {
+    return;
+  }
+  const { autoUpdate, computePosition, flip, offset, shift, size } =
+    window.FloatingUIDOM;
+  const tooltipPlacements = new Set(["top", "right", "bottom", "left"]);
+  const tooltipId = `codex-visualization-tooltip-${
+    window.crypto?.randomUUID?.() ?? Date.now().toString(36)
+  }`;
+  const tooltipGap = 5;
+  const hoverDelay = 700;
+  const skipDelay = 300;
+  let activeTrigger = null;
+  let pendingTrigger = null;
+  let tooltip = null;
+  let openTimeout = null;
+  let autoUpdateCleanup = null;
+  let positionRequest = 0;
+  let skipDelayUntil = 0;
+
+  const getTrigger = (target) =>
+    target?.nodeType === Node.ELEMENT_NODE
+      ? target.closest("[data-tooltip]")
+      : null;
+  const containsTarget = (trigger, target) =>
+    target?.nodeType != null && trigger.contains(target);
+  const getContent = (trigger) =>
+    trigger.getAttribute("data-tooltip")?.trim() ?? "";
+  const getPlacement = (trigger) => {
+    const placement = trigger.getAttribute("data-tooltip-placement");
+    return tooltipPlacements.has(placement) ? placement : "top";
+  };
+  const getTooltip = () => {
+    if (tooltip == null) {
+      tooltip = document.createElement("div");
+      tooltip.id = tooltipId;
+      tooltip.className = "tooltip";
+      tooltip.setAttribute("role", "tooltip");
+    }
+    return tooltip;
+  };
+  const setDescribedBy = (trigger, described) => {
+    const ids = new Set(
+      (trigger.getAttribute("aria-describedby") ?? "")
+        .split(/\s+/)
+        .filter(Boolean),
+    );
+    if (described) {
+      ids.add(tooltipId);
+    } else {
+      ids.delete(tooltipId);
+    }
+    if (ids.size === 0) {
+      trigger.removeAttribute("aria-describedby");
+    } else {
+      trigger.setAttribute("aria-describedby", [...ids].join(" "));
+    }
+  };
+  const clearOpenTimeout = () => {
+    if (openTimeout != null) {
+      window.clearTimeout(openTimeout);
+      openTimeout = null;
+    }
+    pendingTrigger = null;
+  };
+  const closeTooltip = (activateSkipDelay = true) => {
+    clearOpenTimeout();
+    positionRequest += 1;
+    autoUpdateCleanup?.();
+    autoUpdateCleanup = null;
+    if (activeTrigger == null) {
+      return;
+    }
+    setDescribedBy(activeTrigger, false);
+    activeTrigger = null;
+    tooltip?.remove();
+    if (activateSkipDelay) {
+      skipDelayUntil = Date.now() + skipDelay;
+    }
+  };
+  const updatePosition = (trigger, floating) => {
+    const request = ++positionRequest;
+    void computePosition(trigger, floating, {
+      middleware: [
+        offset(tooltipGap),
+        flip({ padding: tooltipGap }),
+        shift({ padding: tooltipGap }),
+        size({
+          padding: tooltipGap,
+          apply({ availableHeight, availableWidth, elements }) {
+            elements.floating.style.setProperty(
+              "--tooltip-available-width",
+              `${Math.max(0, availableWidth)}px`,
+            );
+            elements.floating.style.setProperty(
+              "--tooltip-available-height",
+              `${Math.max(0, availableHeight)}px`,
+            );
+          },
+        }),
+      ],
+      placement: getPlacement(trigger),
+      strategy: "fixed",
+    })
+      .then(({ x, y }) => {
+        if (activeTrigger !== trigger || request !== positionRequest) {
+          return;
+        }
+        const scale = window.devicePixelRatio || 1;
+        floating.style.transform = `translate(${Math.round(x * scale) / scale}px, ${Math.round(y * scale) / scale}px)`;
+        floating.style.visibility = "visible";
+      })
+      .catch(() => {
+        if (activeTrigger === trigger && request === positionRequest) {
+          closeTooltip(false);
+        }
+      });
+  };
+  const openTooltip = (trigger) => {
+    const content = getContent(trigger);
+    if (!trigger.isConnected || content.length === 0) {
+      return;
+    }
+    clearOpenTimeout();
+    if (activeTrigger === trigger) {
+      return;
+    }
+    closeTooltip();
+    const floating = getTooltip();
+    floating.textContent = content;
+    floating.style.visibility = "hidden";
+    floating.style.transform = "translate(0, 0)";
+    document.body.appendChild(floating);
+    activeTrigger = trigger;
+    setDescribedBy(trigger, true);
+    autoUpdateCleanup = autoUpdate(trigger, floating, () => {
+      updatePosition(trigger, floating);
+    });
+  };
+  const requestOpen = (trigger, immediate = false) => {
+    if (
+      getContent(trigger).length === 0 ||
+      activeTrigger === trigger ||
+      pendingTrigger === trigger
+    ) {
+      return;
+    }
+    clearOpenTimeout();
+    pendingTrigger = trigger;
+    const delay =
+      immediate || activeTrigger != null || Date.now() < skipDelayUntil
+        ? 0
+        : hoverDelay;
+    if (delay === 0) {
+      openTooltip(trigger);
+      return;
+    }
+    openTimeout = window.setTimeout(() => {
+      openTimeout = null;
+      pendingTrigger = null;
+      openTooltip(trigger);
+    }, delay);
+  };
+  const handlePointerOpen = (event) => {
+    if (event.pointerType === "touch") {
+      return;
+    }
+    const trigger = getTrigger(event.target);
+    if (trigger == null || containsTarget(trigger, event.relatedTarget)) {
+      return;
+    }
+    requestOpen(trigger);
+  };
+  const handleLeave = (event) => {
+    const trigger = getTrigger(event.target);
+    if (trigger == null || containsTarget(trigger, event.relatedTarget)) {
+      return;
+    }
+    if (activeTrigger === trigger || pendingTrigger === trigger) {
+      closeTooltip();
+    }
+  };
+  const handleFocusIn = (event) => {
+    const trigger = getTrigger(event.target);
+    if (trigger?.matches(":focus-visible")) {
+      requestOpen(trigger, true);
+    }
+  };
+  const handleKeyDown = (event) => {
+    if (event.key === "Escape") {
+      closeTooltip();
+    }
+  };
+  const handleContextMenu = (event) => {
+    const trigger = getTrigger(event.target);
+    if (activeTrigger === trigger || pendingTrigger === trigger) {
+      closeTooltip();
+    }
+  };
+  const destroy = () => {
+    closeTooltip(false);
+    document.removeEventListener("pointerover", handlePointerOpen);
+    document.removeEventListener("pointerout", handleLeave);
+    document.removeEventListener("focusin", handleFocusIn);
+    document.removeEventListener("focusout", handleLeave);
+    document.removeEventListener("keydown", handleKeyDown);
+    document.removeEventListener("contextmenu", handleContextMenu);
+    tooltip = null;
+  };
+
+  document.addEventListener("pointerover", handlePointerOpen);
+  document.addEventListener("pointerout", handleLeave);
+  document.addEventListener("focusin", handleFocusIn);
+  document.addEventListener("focusout", handleLeave);
+  document.addEventListener("keydown", handleKeyDown);
+  document.addEventListener("contextmenu", handleContextMenu);
+  window.addEventListener("pagehide", destroy, { once: true });
+})();
+</script>
+
+<script>
+(() => {
+  if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+    window.addEventListener('load', () => navigator.serviceWorker.register('./service-worker.js').catch(() => {}));
+  }
+})();
+</script>
+
+<script id="CUBABY_APP_V2_CONTROLLER">
+(() => {
+  "use strict";
+  const songs = JSON.parse(document.getElementById("cubaby-data").textContent);
+  const shell = document.getElementById("cubaby-app-shell");
+  const stage = document.getElementById("cubaby-teleprompter");
+  const nav = document.getElementById("cubaby-bottom-nav");
+  const picker = document.getElementById("tele-song");
+  const search = document.getElementById("cubaby-song-search");
+  const list = document.getElementById("cubaby-song-list");
+  const resultLabel = document.getElementById("cubaby-song-result-label");
+  let songFilter = "all";
+
+  const isPending = (song) => String(song.status || "").toUpperCase() === "PENDIENTE";
+  const esc = (value) => String(value ?? "").replace(/[&<>\"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
+
+  const total = songs.length;
+  const pending = songs.filter(isPending).length;
+  const ready = total - pending;
+  document.getElementById("cubaby-total-count").textContent = total;
+  document.getElementById("cubaby-ready-count").textContent = ready;
+  document.getElementById("cubaby-pending-count").textContent = pending;
+
+  function setNavActive(name) {
+    nav.querySelectorAll("[data-nav]").forEach((button) => button.classList.toggle("is-active", button.dataset.nav === name));
+  }
+
+  function showScreen(name) {
+    stage.classList.remove("is-active");
+    stage.style.display = "none";
+    shell.style.display = "block";
+    shell.querySelectorAll(".cubaby-screen").forEach((screen) => screen.classList.toggle("is-active", screen.dataset.screen === name));
+    setNavActive(name);
+    window.scrollTo({ top: 0, behavior: "auto" });
+    if (name === "songs") renderSongs();
+  }
+
+  function openStage(index = null) {
+    shell.style.display = "none";
+    stage.classList.add("is-active");
+    stage.style.display = "block";
+    if (Number.isInteger(index) && picker) {
+      picker.value = String(index);
+      picker.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+    window.scrollTo({ top: 0, behavior: "auto" });
+  }
+
+  function renderSongs() {
+    const q = search.value.trim().toLocaleLowerCase("es");
+    const filtered = songs.filter((song) => {
+      const pendingSong = isPending(song);
+      if (songFilter === "ready" && pendingSong) return false;
+      if (songFilter === "pending" && !pendingSong) return false;
+      if (!q) return true;
+      return `${song.title} ${song.artist || ""}`.toLocaleLowerCase("es").includes(q);
+    });
+    resultLabel.textContent = `${filtered.length} ${filtered.length === 1 ? "canción" : "canciones"}`;
+    list.innerHTML = filtered.map((song) => {
+      const index = songs.indexOf(song);
+      const pendingSong = isPending(song);
+      return `<button type="button" class="cubaby-song-card" data-song-index="${index}">
+        <span class="cubaby-song-no">${String(song.number).padStart(2,"0")}</span>
+        <span><h3>${esc(song.title)}</h3><p>${esc(song.artist || (pendingSong ? "Pendiente de completar" : "Lista para teleprompter"))}</p></span>
+        <span class="cubaby-pill ${pendingSong ? "pending" : "ready"}">${pendingSong ? "PENDIENTE" : "LISTA"}</span>
+      </button>`;
+    }).join("");
+  }
+
+  shell.addEventListener("click", (event) => {
+    const go = event.target.closest("[data-go]");
+    if (go) return showScreen(go.dataset.go);
+    const navButton = event.target.closest("[data-nav]");
+    if (navButton) {
+      if (navButton.dataset.nav === "stage") return openStage();
+      return showScreen(navButton.dataset.nav);
+    }
+    const setButton = event.target.closest("[data-set-filter]");
+    if (setButton) {
+      songFilter = setButton.dataset.setFilter;
+      document.querySelectorAll("[data-song-filter]").forEach((button) => button.classList.toggle("is-active", button.dataset.songFilter === songFilter));
+      showScreen("songs");
+      return;
+    }
+    const filterButton = event.target.closest("[data-song-filter]");
+    if (filterButton) {
+      songFilter = filterButton.dataset.songFilter;
+      document.querySelectorAll("[data-song-filter]").forEach((button) => button.classList.toggle("is-active", button === filterButton));
+      renderSongs();
+      return;
+    }
+    const songButton = event.target.closest("[data-song-index]");
+    if (songButton) return openStage(Number(songButton.dataset.songIndex));
+    const stageShortcut = event.target.closest("[data-stage]");
+    if (stageShortcut) return openStage();
+  });
+
+  function setViewMode(mode) {
+    window.cubabyViewMode = mode === "personal" ? "personal" : "band";
+    localStorage.setItem("cubaby-view-mode", window.cubabyViewMode);
+    document.querySelectorAll("[data-view-mode]").forEach((button) => button.classList.toggle("is-active", button.dataset.viewMode === window.cubabyViewMode));
+    document.querySelectorAll("[data-stage-view]").forEach((button) => button.classList.toggle("is-active", button.dataset.stageView === window.cubabyViewMode));
+    const label = document.getElementById("cubaby-current-view-label");
+    if (label) label.textContent = window.cubabyViewMode === "personal" ? "Vista: MI VISTA · BATERÍA" : "Vista: BANDA";
+    const strip = document.querySelector(".drummer-strip");
+    if (strip) strip.style.display = window.cubabyViewMode === "personal" ? "grid" : "none";
+    document.dispatchEvent(new CustomEvent("cubaby-view-mode", { detail: { mode: window.cubabyViewMode } }));
+  }
+
+  async function testMicrophone() {
+    const label = document.getElementById("cubaby-mic-diagnostic");
+    if (!label) return;
+    label.className = "cubaby-mic-status";
+    label.textContent = "Comprobando…";
+    const embedded = (() => { try { return window.top !== window.self; } catch (_) { return true; } })();
+    const localFileProtocol = location.protocol === "content:" || location.protocol === "file:";
+    if (localFileProtocol) {
+      label.className = "cubaby-mic-status warn";
+      label.textContent = "Archivo local detectado (" + location.protocol + "). El navegador no puede habilitar Sync Vivo aquí. Abre la versión HTTPS/PWA o la app instalada.";
+      return;
+    }
+    if (!window.isSecureContext) {
+      label.className = "cubaby-mic-status warn";
+      label.textContent = "Bloqueado: esta dirección no es segura. Sync Vivo requiere HTTPS o la app instalada.";
+      return;
+    }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      label.className = "cubaby-mic-status warn";
+      label.textContent = embedded ? "Bloqueado por el visor embebido. Abre la PWA/app instalada." : "Este navegador no expone el micrófono.";
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      stream.getTracks().forEach((track) => track.stop());
+      label.className = "cubaby-mic-status ok";
+      label.textContent = "Micrófono listo. Sync Vivo puede utilizarlo.";
+    } catch (error) {
+      label.className = "cubaby-mic-status warn";
+      const name = error && error.name ? error.name : "permiso denegado";
+      label.textContent = embedded ? `No disponible aquí (${name}). El visor de Biblioteca puede bloquearlo; usa la PWA/app.` : `No disponible (${name}). Revisa el permiso de micrófono.`;
+    }
+  }
+
+  window.cubabyViewMode = localStorage.getItem("cubaby-view-mode") === "personal" ? "personal" : "band";
+  document.querySelectorAll("[data-view-mode]").forEach((button) => button.addEventListener("click", () => setViewMode(button.dataset.viewMode)));
+  document.querySelectorAll("[data-stage-view]").forEach((button) => button.addEventListener("click", () => setViewMode(button.dataset.stageView)));
+  document.getElementById("cubaby-test-mic").addEventListener("click", testMicrophone);
+  document.getElementById("cubaby-start-stage").addEventListener("click", () => openStage());
+  document.getElementById("cubaby-stage-home").addEventListener("click", () => showScreen("home"));
+  search.addEventListener("input", renderSongs);
+  renderSongs();
+  setViewMode(window.cubabyViewMode);
+  showScreen("home");
+})();
+</script>
+
+
+<div id="cubaby-local-file-warning" style="display:none;position:fixed;left:12px;right:12px;top:12px;z-index:99999;padding:12px 14px;border-radius:14px;background:#fff4e5;color:#7a3b00;border:1px solid #ffcc80;font:600 14px/1.35 system-ui,-apple-system,Segoe UI,sans-serif;box-shadow:0 8px 28px rgba(0,0,0,.16)">
+  <div style="font-weight:800;margin-bottom:4px">Sync Vivo no puede usar el micrófono desde un archivo descargado.</div>
+  <div>Estás abriendo Cubaby como <b>content://</b> o <b>file://</b>. La interfaz funciona, pero el micrófono requiere la versión HTTPS/PWA o la app instalada.</div>
+  <button id="cubaby-dismiss-local-warning" style="margin-top:8px;border:0;border-radius:9px;padding:7px 10px;font-weight:700">Entendido</button>
+</div>
+<script>
+(function(){
+  const localFile = location.protocol === 'content:' || location.protocol === 'file:';
+  const box = document.getElementById('cubaby-local-file-warning');
+  if (localFile && box) box.style.display='block';
+  const btn = document.getElementById('cubaby-dismiss-local-warning');
+  if (btn) btn.addEventListener('click',()=>box.style.display='none');
+})();
+</script>
+
+</body>
+</html>
