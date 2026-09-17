@@ -1,0 +1,321 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Cubaby · Web Learner 48</title>
+<style>
+:root{color-scheme:dark;--bg:#091120;--panel:#141e2f;--border:#2d3a52;--text:#f7f9fc;--muted:#aeb9cb;--blue:#329cff;--green:#64d995;--yellow:#ffd067;--red:#ff7a87}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,sans-serif;padding:20px}
+.wrap{max-width:1180px;margin:auto}
+.k{color:#59adff;font-weight:900;letter-spacing:.13em;font-size:13px}
+h1{margin:6px 0 4px}.muted{color:var(--muted)}
+.card{background:var(--panel);border:1px solid var(--border);border-radius:20px;padding:18px;margin:14px 0}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+button{border:0;border-radius:12px;padding:12px 16px;font-weight:850;font-size:15px;cursor:pointer;margin:4px 5px 4px 0}
+button:disabled{opacity:.4;cursor:not-allowed}
+.primary{background:var(--blue);color:white}.secondary{background:#e9eef6;color:#10151e}.danger{background:#8a2f42;color:white}.ghost{background:#253249;color:white}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.stat{background:#101827;border:1px solid var(--border);border-radius:15px;padding:12px}
+.stat b{display:block;font-size:26px}
+#player{width:100%;aspect-ratio:16/9;background:#000;border-radius:14px;overflow:hidden}
+.progress{height:14px;background:#27334b;border-radius:999px;overflow:hidden}.progress>div{height:100%;width:0;background:var(--blue);transition:width .2s}
+.status{font-size:21px;font-weight:900;margin:10px 0}
+.ok{color:var(--green)}.warn{color:var(--yellow)}.err{color:var(--red)}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{padding:9px 8px;border-bottom:1px solid #29364d;text-align:left;vertical-align:top}
+th{position:sticky;top:0;background:var(--panel);z-index:2}
+.num{width:44px;text-align:right}.pill{display:inline-block;padding:3px 8px;border-radius:999px;font-weight:800;font-size:11px}
+.p-ready{background:#143a2b;color:#79e4a7}.p-review{background:#473818;color:#ffd477}.p-learned{background:#123b5b;color:#86cfff}.p-error{background:#4d2029;color:#ff9da8}
+input,select{background:#0d1626;color:white;border:1px solid #36445e;border-radius:9px;padding:8px;max-width:100%}
+.source-input{width:130px;font-family:ui-monospace,Consolas,monospace}
+.scroll{max-height:520px;overflow:auto;border:1px solid var(--border);border-radius:14px}
+.bigtime{font-size:44px;font-weight:950}
+.small{font-size:12px;line-height:1.45}
+@media(max-width:800px){.grid{grid-template-columns:1fr}.stats{grid-template-columns:1fr 1fr}body{padding:10px}th:nth-child(4),td:nth-child(4){display:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<div class="k">CUBABY · WEB LEARNER 48</div>
+<h1>Constructor automático de referencias</h1>
+<p class="muted">No modifica el teleprompter. Aprende huellas musicales desde fuentes web y guarda las referencias localmente en este navegador.</p>
+
+<div class="stats">
+  <div class="stat"><span class="muted">Set</span><b>48</b><small>canciones</small></div>
+  <div class="stat"><span class="muted">Fuente lista</span><b id="readyCount">37</b><small>preasignadas</small></div>
+  <div class="stat"><span class="muted">Aprendidas</span><b id="learnedCount">0</b><small>en este equipo</small></div>
+  <div class="stat"><span class="muted">Revisar</span><b id="reviewCount">11</b><small>sin fuente segura</small></div>
+</div>
+
+<div class="grid">
+  <div class="card">
+    <h2>Fuente actual</h2>
+    <div id="player"></div>
+    <p class="small muted">Mantén el sonido por bocinas con un volumen similar al usado en la prueba de Aviéntame. El micrófono escucha la reproducción y guarda únicamente características numéricas; no guarda audio.</p>
+  </div>
+  <div class="card">
+    <h2>Aprendizaje por lote</h2>
+    <button class="primary" id="startBtn">APRENDER DISPONIBLES</button>
+    <button class="ghost" id="pauseBtn" disabled>PAUSAR</button>
+    <button class="danger" id="stopBtn" disabled>DETENER</button>
+    <div id="batchStatus" class="status">Listo para iniciar.</div>
+    <div class="progress"><div id="batchBar"></div></div>
+    <p id="batchInfo" class="muted small">Las fuentes sin ID o bloqueadas se saltan automáticamente.</p>
+    <div class="progress" style="height:8px"><div id="signalBar"></div></div>
+    <p class="small muted">Señal del micrófono</p>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Validar una referencia aprendida</h2>
+  <select id="locSong"></select>
+  <button class="primary" id="locBtn">LOCALIZAR</button>
+  <div id="locTime" class="bigtime">--:--</div>
+  <div id="locStatus" class="status">Selecciona una canción aprendida.</div>
+  <div id="locConfidence" class="muted small"></div>
+</div>
+
+<div class="card">
+  <h2>Referencias maestras</h2>
+  <button class="secondary" id="exportBtn">EXPORTAR MAESTRO JSON</button>
+  <button class="secondary" id="importBtn">IMPORTAR MAESTRO</button>
+  <input id="importFile" type="file" accept=".json,application/json" hidden>
+  <button class="ghost" id="retryBtn">REINTENTAR FALLIDAS</button>
+  <span id="storageInfo" class="muted small"></span>
+</div>
+
+<div class="card">
+  <h2>Catálogo 48</h2>
+  <p class="muted small">Las 11 marcadas REVISAR no se reproducen automáticamente hasta tener una fuente segura. Puedes pegar un ID de YouTube en la columna Fuente y pulsar Guardar; queda almacenado en este navegador.</p>
+  <div class="scroll">
+    <table>
+      <thead><tr><th class="num">#</th><th>Canción</th><th>Estado</th><th>Observación</th><th>Fuente</th></tr></thead>
+      <tbody id="catalogBody"></tbody>
+    </table>
+  </div>
+</div>
+</div>
+
+<script src="https://www.youtube.com/iframe_api"></script>
+<script>
+const BASE_SONGS = [{"n": 1, "title": "I RAN (SO FAR AWAY)", "artist": "A Flock of Seagulls", "youtubeId": "iIpfWORQWhU", "note": "Video oficial; posible edición de video. Verificar contra versión del set."}, {"n": 2, "title": "BREAKING THE LAW", "artist": "Judas Priest", "youtubeId": "L397TWLwrUU", "note": "Video oficial."}, {"n": 3, "title": "IRRESPONSABLES", "artist": "Babasónicos", "youtubeId": "gZV2Q9zH2eg", "note": "Video oficial."}, {"n": 4, "title": "VENENO", "artist": "Zoé", "youtubeId": null, "note": "REVISAR FUENTE: no asignar Unplugged si el set usa estudio."}, {"n": 5, "title": "NUNCA TE DOBLARÁS", "artist": "Jaguares", "youtubeId": null, "note": "REVISAR FUENTE: falta validar una fuente equivalente al álbum."}, {"n": 6, "title": "MALDITO AMOR", "artist": "La Lupita", "youtubeId": "qa0mgMvqPDs", "note": "Video oficial."}, {"n": 7, "title": "JUST LIKE HEAVEN", "artist": "The Cure", "youtubeId": "n3nPiBai66M", "note": "Video oficial."}, {"n": 8, "title": "CLOCKS", "artist": "Coldplay", "youtubeId": "d020hcWA_Wg", "note": "Video oficial."}, {"n": 9, "title": "DISCO 2000", "artist": "Pulp", "youtubeId": "qJS3xnD7Mus", "note": "Video oficial."}, {"n": 10, "title": "PSYCHO KILLER", "artist": "Talking Heads", "youtubeId": "eauZzwt8Ci8", "note": "Audio de referencia."}, {"n": 11, "title": "EN LA CIUDAD DE LA FURIA", "artist": "Soda Stereo", "youtubeId": "AVEDgT_lG60", "note": "Video oficial."}, {"n": 12, "title": "LAS BATALLAS", "artist": "Café Tacvba", "youtubeId": null, "note": "REVISAR FUENTE: álbum confirmado; falta ID de referencia validado."}, {"n": 13, "title": "EL ESQUELETO", "artist": "Víctimas del Doctor Cerebro", "youtubeId": null, "note": "REVISAR FUENTE: existen varias versiones; elegir original del set."}, {"n": 14, "title": "DÍA CERO", "artist": "La Ley", "youtubeId": "3BTBdZ-lFAI", "note": "Video oficial."}, {"n": 15, "title": "HOY TENGO MIEDO", "artist": "Fobia", "youtubeId": null, "note": "REVISAR FUENTE: no usar cover o versión en vivo por defecto."}, {"n": 16, "title": "AVIÉNTAME", "artist": "Caifanes", "youtubeId": "Or-iNEWFGQ0", "note": "VALIDADA con la prueba Web Learner."}, {"n": 17, "title": "ROMPECABEZAS", "artist": "Los Concorde", "youtubeId": "M_9Hl_XrFEw", "note": "Fuente de referencia."}, {"n": 18, "title": "WITH OR WITHOUT YOU", "artist": "U2", "youtubeId": "ujNeHIo7oTE", "note": "Video oficial."}, {"n": 19, "title": "BILLIE JEAN", "artist": "Michael Jackson", "youtubeId": "Zi_XLOBDo_Y", "note": "Video oficial."}, {"n": 20, "title": "EVERYBODY WANTS TO RULE THE WORLD", "artist": "Tears for Fears", "youtubeId": "aGCdLKXNF3w", "note": "Video oficial."}, {"n": 21, "title": "A LITTLE RESPECT", "artist": "Erasure", "youtubeId": "x34icYC8zA0", "note": "Video oficial."}, {"n": 22, "title": "STARLIGHT", "artist": "Muse", "youtubeId": "Pgum6OT_VH8", "note": "Video oficial."}, {"n": 23, "title": "IN THE END", "artist": "Linkin Park", "youtubeId": "1yw1Tgj9-VU", "note": "Video oficial."}, {"n": 24, "title": "DULCE SOLEDAD", "artist": "Enjambre", "youtubeId": "LoUgRNpEgKE", "note": "Video oficial."}, {"n": 25, "title": "HERE WE KUM", "artist": "Molotov", "youtubeId": "JK_rNvBw7Yg", "note": "Versión original de referencia."}, {"n": 26, "title": "MI VIDA", "artist": "DLD", "youtubeId": "dapgfO59ar8", "note": "Video oficial."}, {"n": 27, "title": "CENIT", "artist": "La Castañeda", "youtubeId": null, "note": "REVISAR VERSIÓN: Cubaby indica explícitamente usar la versión EN VIVO."}, {"n": 28, "title": "WHITE ROOM", "artist": "Cream", "youtubeId": "-DQdB7dTm1A", "note": "Lyric video oficial con audio del tema."}, {"n": 29, "title": "SMOKE ON THE WATER", "artist": "Deep Purple", "youtubeId": "Q2FzZSBD5LE", "note": "Video oficial del tema de Machine Head; revisar duración vs Spotify si difiere."}, {"n": 30, "title": "LA GRANGE", "artist": "ZZ Top", "youtubeId": "y20JwH3rwT0", "note": "Remaster de referencia."}, {"n": 31, "title": "BEDS ARE BURNING", "artist": "Midnight Oil", "youtubeId": "ejorQVy3m8E", "note": "Video oficial."}, {"n": 32, "title": "VIENTO", "artist": "Caifanes", "youtubeId": null, "note": "REVISAR FUENTE: se identificó publicación CaifanesVEVO, falta ID validado."}, {"n": 33, "title": "JA, JA, JA", "artist": "La Lupita", "youtubeId": null, "note": "REVISAR FUENTE."}, {"n": 34, "title": "HOLD THE LINE", "artist": "Toto", "youtubeId": "htgr3pvBr-I", "note": "Video oficial."}, {"n": 35, "title": "FRIDAY I'M IN LOVE", "artist": "The Cure", "youtubeId": "mGgMZpGYiy8", "note": "Video oficial."}, {"n": 36, "title": "HASH PIPE", "artist": "Weezer", "youtubeId": "_9BGLtqqkVI", "note": "Video oficial."}, {"n": 37, "title": "GUITARRAS BLANCAS", "artist": "Los Enanitos Verdes", "youtubeId": "FIToLaXqCGA", "note": "Audio oficial."}, {"n": 38, "title": "GIMME THA POWER", "artist": "Molotov", "youtubeId": null, "note": "REVISAR FUENTE: no usar versión en vivo si el set usa estudio."}, {"n": 39, "title": "N.I.B.", "artist": "Black Sabbath", "youtubeId": null, "note": "REVISAR FUENTE: fuente oficial localizada en vivo; falta confirmar versión del set."}, {"n": 40, "title": "REBEL YELL", "artist": "Billy Idol", "youtubeId": "VdphvuyaV_I", "note": "Video oficial."}, {"n": 41, "title": "DEVUÉLVEME A MI CHICA", "artist": "Hombres G", "youtubeId": "fWkfgEzfhK8", "note": "Video oficial."}, {"n": 42, "title": "DON'T YOU (FORGET ABOUT ME)", "artist": "Simple Minds", "youtubeId": "CdqoNKCCt7A", "note": "Video oficial."}, {"n": 43, "title": "KILLING IN THE NAME", "artist": "Rage Against the Machine", "youtubeId": "bWXazVhlyxQ", "note": "Video oficial."}, {"n": 44, "title": "ENTRE DOS TIERRAS", "artist": "Héroes del Silencio", "youtubeId": "SzimletXB7M", "note": "Video oficial."}, {"n": 45, "title": "EL SATÁNICO DR. CADILLAC", "artist": "Los Fabulosos Cadillacs", "youtubeId": null, "note": "REVISAR FUENTE: oficial audio localizado, falta ID validado."}, {"n": 46, "title": "QUEREME ASÍ", "artist": "Los Caligaris / Jorge Serrano", "youtubeId": "g8ooEvIwNiE", "note": "Video oficial de referencia."}, {"n": 47, "title": "YELLOW LEDBETTER", "artist": "Pearl Jam", "youtubeId": "iYtBMgLfqKQ", "note": "Audio oficial."}, {"n": 48, "title": "EL FINAL", "artist": "Rostros Ocultos", "youtubeId": "FdsWUZ3NDqc", "note": "Video oficial."}];
+const DB_NAME='CubabyReferences';
+const DB_VERSION=1;
+const STORE='refs';
+const CUSTOM_KEY='cubaby_custom_sources_v1';
+let db=null, player=null, playerReady=false;
+let stream=null, ctx=null, sourceNode=null, analyser=null;
+let timer=null, mode='idle', batch=false, paused=false, currentN=null;
+let refFrames=[], queryFrames=[], queryStarted=0;
+let queue=[], qpos=0, statuses={};
+
+const $=id=>document.getElementById(id);
+function fmt(s){if(!Number.isFinite(s))return'--:--';const m=Math.floor(s/60),ss=Math.floor(s%60);return `${m}:${String(ss).padStart(2,'0')}`;}
+function customSources(){try{return JSON.parse(localStorage.getItem(CUSTOM_KEY)||'{}')}catch(e){return {}}}
+function saveCustom(o){localStorage.setItem(CUSTOM_KEY,JSON.stringify(o))}
+function songs(){
+  const cs=customSources();
+  return BASE_SONGS.map(s=>({...s,youtubeId:cs[s.n]||s.youtubeId}));
+}
+function openDB(){
+  return new Promise((resolve,reject)=>{
+    const req=indexedDB.open(DB_NAME,DB_VERSION);
+    req.onupgradeneeded=()=>{const d=req.result;if(!d.objectStoreNames.contains(STORE))d.createObjectStore(STORE,{keyPath:'n'});}
+    req.onsuccess=()=>{db=req.result;resolve(db)}; req.onerror=()=>reject(req.error);
+  });
+}
+function dbPut(v){return new Promise((res,rej)=>{const tx=db.transaction(STORE,'readwrite');tx.objectStore(STORE).put(v);tx.oncomplete=()=>res();tx.onerror=()=>rej(tx.error);})}
+function dbGet(n){return new Promise((res,rej)=>{const r=db.transaction(STORE).objectStore(STORE).get(n);r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error);})}
+function dbAll(){return new Promise((res,rej)=>{const r=db.transaction(STORE).objectStore(STORE).getAll();r.onsuccess=()=>res(r.result||[]);r.onerror=()=>rej(r.error);})}
+function dbClear(){return new Promise((res,rej)=>{const tx=db.transaction(STORE,'readwrite');tx.objectStore(STORE).clear();tx.oncomplete=res;tx.onerror=()=>rej(tx.error);})}
+
+window.onYouTubeIframeAPIReady=()=>{
+  player=new YT.Player('player',{
+    videoId:'Or-iNEWFGQ0',
+    playerVars:{playsinline:1,rel:0,modestbranding:1},
+    events:{onReady:()=>{playerReady=true;},onStateChange:onYTState,onError:onYTError}
+  });
+};
+
+async function ensureMic(){
+  if(stream)return;
+  stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false},video:false});
+  ctx=new (window.AudioContext||window.webkitAudioContext)();
+  sourceNode=ctx.createMediaStreamSource(stream);
+  analyser=ctx.createAnalyser(); analyser.fftSize=4096; analyser.smoothingTimeConstant=.12; sourceNode.connect(analyser);
+}
+function features(){
+  const bins=new Uint8Array(analyser.frequencyBinCount); analyser.getByteFrequencyData(bins);
+  const td=new Uint8Array(analyser.fftSize); analyser.getByteTimeDomainData(td);
+  let ss=0;for(const v of td){const x=(v-128)/128;ss+=x*x}
+  const rms=Math.sqrt(ss/td.length);
+  $('signalBar').style.width=Math.min(100,rms*500)+'%';
+  const log=[],nBands=24,nyq=ctx.sampleRate/2,minF=70,maxF=Math.min(5000,nyq-1);
+  for(let b=0;b<nBands;b++){
+    const f1=minF*Math.pow(maxF/minF,b/nBands),f2=minF*Math.pow(maxF/minF,(b+1)/nBands);
+    const i1=Math.max(1,Math.floor(f1/nyq*bins.length)),i2=Math.max(i1+1,Math.floor(f2/nyq*bins.length));
+    let sum=0,c=0;for(let i=i1;i<i2&&i<bins.length;i++){sum+=Math.log1p(bins[i]);c++}log.push(c?sum/c:0);
+  }
+  let norm=Math.sqrt(log.reduce((a,v)=>a+v*v,0))||1;for(let i=0;i<log.length;i++)log[i]/=norm;
+  const chroma=new Array(12).fill(0);
+  for(let i=2;i<bins.length;i++){const f=i*nyq/bins.length;if(f<80||f>3000)continue;const midi=69+12*Math.log2(f/440);const pc=((Math.round(midi)%12)+12)%12;chroma[pc]+=Math.pow(bins[i]/255,2);}
+  norm=Math.sqrt(chroma.reduce((a,v)=>a+v*v,0))||1;for(let i=0;i<12;i++)chroma[i]/=norm;
+  return {r:rms,v:log.concat(chroma)};
+}
+function cosine(a,b){let s=0;for(let i=0;i<Math.min(a.length,b.length);i++)s+=a[i]*b[i];return s;}
+
+function startSampler(){
+  clearInterval(timer);
+  timer=setInterval(()=>{
+    if(mode==='learn'){
+      if(!player||player.getPlayerState()!==YT.PlayerState.PLAYING)return;
+      const f=features(),t=player.getCurrentTime();
+      if(f.r>.005)refFrames.push({t:+t.toFixed(3),v:f.v.map(x=>+x.toFixed(4))});
+      $('batchInfo').textContent=`${fmt(t)} · ${refFrames.length} muestras · ${currentSong()?.title||''}`;
+    }else if(mode==='locate'){
+      queryFrames.push(features().v);
+      const e=(performance.now()-queryStarted)/1000;
+      $('locStatus').textContent=`Escuchando… ${e.toFixed(1)} s`;
+      if(e>=6)finishLocate();
+    }
+  },180);
+}
+function currentSong(){return songs().find(s=>s.n===currentN)}
+async function startBatch(onlyFailed=false){
+  if(!playerReady){$('batchStatus').textContent='Espera unos segundos a que cargue YouTube.';return}
+  try{await ensureMic();if(ctx.state==='suspended')await ctx.resume()}catch(e){$('batchStatus').textContent='No pude abrir micrófono: '+e.name;return}
+  const learned=(await dbAll()).map(x=>x.n);
+  queue=songs().filter(s=>s.youtubeId && !learned.includes(s.n));
+  if(onlyFailed)queue=queue.filter(s=>statuses[s.n]==='error');
+  if(!queue.length){$('batchStatus').innerHTML='<span class="ok">No hay fuentes pendientes disponibles.</span>';return}
+  batch=true;paused=false;qpos=0;
+  $('startBtn').disabled=true;$('pauseBtn').disabled=false;$('stopBtn').disabled=false;
+  await learnQueueItem();
+}
+async function learnQueueItem(){
+  if(!batch||paused)return;
+  if(qpos>=queue.length){finishBatch();return}
+  const s=queue[qpos];currentN=s.n;refFrames=[];mode='learn';statuses[s.n]='learning';renderCatalog();
+  $('batchStatus').textContent=`${String(qpos+1).padStart(2,'0')}/${String(queue.length).padStart(2,'0')} · ${s.title}`;
+  $('batchBar').style.width=(qpos/queue.length*100)+'%';
+  player.loadVideoById({videoId:s.youtubeId,startSeconds:0});
+  startSampler();
+}
+async function saveCurrent(){
+  const s=currentSong(); if(!s)return;
+  if(refFrames.length<100){statuses[s.n]='error';return}
+  await dbPut({n:s.n,title:s.title,artist:s.artist,youtubeId:s.youtubeId,created:new Date().toISOString(),duration:refFrames.at(-1).t,frames:refFrames});
+  statuses[s.n]='learned';
+}
+async function onYTState(ev){
+  if(!batch||mode!=='learn')return;
+  if(ev.data===YT.PlayerState.ENDED){
+    clearInterval(timer);
+    await saveCurrent();
+    qpos++;renderAll();
+    setTimeout(learnQueueItem,1200);
+  }
+}
+function onYTError(ev){
+  if(!batch||!currentN)return;
+  clearInterval(timer);statuses[currentN]='error';
+  const s=currentSong();
+  $('batchInfo').textContent=`Fuente bloqueada/no disponible (${ev.data}) · ${s?s.title:''}. Se saltará.`;
+  qpos++;renderAll();setTimeout(learnQueueItem,1400);
+}
+function finishBatch(){
+  clearInterval(timer);batch=false;mode='idle';
+  $('batchBar').style.width='100%';
+  $('batchStatus').innerHTML='<span class="ok">LOTE TERMINADO ✓</span>';
+  $('batchInfo').textContent='Revisa las canciones saltadas o con error.';
+  $('startBtn').disabled=false;$('pauseBtn').disabled=true;$('stopBtn').disabled=true;
+  renderAll();
+}
+function pauseResume(){
+  if(!batch)return;
+  paused=!paused;
+  if(paused){player.pauseVideo();$('pauseBtn').textContent='REANUDAR';$('batchStatus').textContent='PAUSADO';}
+  else{player.playVideo();$('pauseBtn').textContent='PAUSAR';$('batchStatus').textContent=`Reanudando · ${currentSong()?.title||''}`;}
+}
+function stopBatch(){
+  clearInterval(timer);batch=false;paused=false;mode='idle';if(player)player.pauseVideo();
+  $('startBtn').disabled=false;$('pauseBtn').disabled=true;$('stopBtn').disabled=true;
+  $('batchStatus').textContent='Detenido. El progreso ya guardado se conserva.';
+  renderAll();
+}
+
+async function locateSelected(){
+  const n=Number($('locSong').value);if(!n){$('locStatus').textContent='No hay canción seleccionada.';return}
+  const rec=await dbGet(n);if(!rec){$('locStatus').textContent='Esa canción aún no está aprendida.';return}
+  try{await ensureMic();if(ctx.state==='suspended')await ctx.resume()}catch(e){$('locStatus').textContent='Error micrófono: '+e.name;return}
+  if(player&&player.getPlayerState()===YT.PlayerState.PLAYING)player.pauseVideo();
+  currentN=n;queryFrames=[];queryStarted=performance.now();mode='locate';$('locTime').textContent='…';$('locConfidence').textContent='';window.__locRef=rec.frames;startSampler();
+}
+function finishLocate(){
+  clearInterval(timer);mode='idle';
+  const ref=window.__locRef,q=queryFrames;if(!ref||q.length<12){$('locStatus').textContent='Muestra insuficiente.';return}
+  let best={score:-1,idx:0,step:1},second=-1;
+  for(const step of [.90,1,1.10]){
+    const need=Math.floor((q.length-1)*step)+1;
+    for(let i=0;i+need<ref.length;i++){
+      let s=0;for(let j=0;j<q.length;j++)s+=cosine(q[j],ref[i+Math.round(j*step)].v);s/=q.length;
+      if(s>best.score){second=best.score;best={score:s,idx:i,step}}else if(s>second)second=s;
+    }
+  }
+  const sec=ref[best.idx].t;
+  $('locTime').textContent=fmt(sec);$('locStatus').textContent=`Posición estimada: ${fmt(sec)}`;
+  $('locConfidence').textContent=`Similitud ${(best.score*100).toFixed(1)}% · velocidad ${best.step.toFixed(2)} · margen ${((best.score-second)*100).toFixed(2)}.`;
+}
+
+async function exportMaster(){
+  const refs=await dbAll();if(!refs.length){alert('Todavía no hay referencias aprendidas.');return}
+  const payload={format:'CubabyReferenceMaster',version:1,exported:new Date().toISOString(),count:refs.length,refs};
+  const blob=new Blob([JSON.stringify(payload)],{type:'application/json'});const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);a.download=`Cubaby_REFERENCIAS_MAESTRAS_${refs.length}_de_48.json`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1500);
+}
+async function importMaster(file){
+  const obj=JSON.parse(await file.text());const refs=Array.isArray(obj.refs)?obj.refs:[];
+  for(const r of refs)if(r&&r.n&&Array.isArray(r.frames))await dbPut(r);
+  await renderAll();
+  alert(`Importadas ${refs.length} referencias.`);
+}
+function setSource(n,val){
+  const id=(val||'').trim();const cs=customSources();if(id)cs[n]=id;else delete cs[n];saveCustom(cs);renderAll();
+}
+async function renderCatalog(){
+  const learned=new Set((await dbAll()).map(r=>r.n));const body=$('catalogBody');body.innerHTML='';
+  for(const s of songs()){
+    const tr=document.createElement('tr');
+    let cls='p-review',label='REVISAR';
+    if(learned.has(s.n)){cls='p-learned';label='APRENDIDA ✓'}
+    else if(statuses[s.n]==='error'){cls='p-error';label='ERROR FUENTE'}
+    else if(s.youtubeId){cls='p-ready';label='FUENTE LISTA'}
+    tr.innerHTML=`<td class="num">${s.n}</td><td><b>${escapeHtml(s.title)}</b><br><span class="muted">${escapeHtml(s.artist)}</span></td><td><span class="pill ${cls}">${label}</span></td><td class="muted">${escapeHtml(s.note||'')}</td><td><input class="source-input" data-n="${s.n}" value="${escapeHtml(s.youtubeId||'')}" placeholder="YouTube ID"><button class="ghost save-source" data-n="${s.n}">Guardar</button></td>`;
+    body.appendChild(tr);
+  }
+  body.querySelectorAll('.save-source').forEach(b=>b.onclick=()=>{const n=Number(b.dataset.n);const input=body.querySelector(`input[data-n="${n}"]`);setSource(n,input.value)});
+}
+function escapeHtml(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]))}
+async function renderAll(){
+  const refs=await dbAll(), learned=refs.length, ss=songs();
+  $('learnedCount').textContent=learned;
+  $('readyCount').textContent=ss.filter(s=>s.youtubeId&&!refs.some(r=>r.n===s.n)).length;
+  $('reviewCount').textContent=ss.filter(s=>!s.youtubeId).length;
+  const sel=$('locSong');const val=sel.value;sel.innerHTML='<option value="">Selecciona aprendida…</option>'+refs.sort((a,b)=>a.n-b.n).map(r=>`<option value="${r.n}">${String(r.n).padStart(2,'0')} · ${escapeHtml(r.title)}</option>`).join('');if(val)sel.value=val;
+  await renderCatalog();
+  if(navigator.storage&&navigator.storage.estimate){const e=await navigator.storage.estimate();$('storageInfo').textContent=`Almacenamiento usado: ${(e.usage/1024/1024).toFixed(1)} MB de ${(e.quota/1024/1024).toFixed(0)} MB disponibles aprox.`}
+}
+
+$('startBtn').onclick=()=>startBatch(false);
+$('retryBtn').onclick=()=>startBatch(true);
+$('pauseBtn').onclick=pauseResume;$('stopBtn').onclick=stopBatch;
+$('locBtn').onclick=locateSelected;$('exportBtn').onclick=exportMaster;
+$('importBtn').onclick=()=>$('importFile').click();
+$('importFile').onchange=e=>e.target.files[0]&&importMaster(e.target.files[0]).catch(err=>alert(err.message));
+
+(async()=>{await openDB();await renderAll();})();
+</script>
+</body>
+</html>
