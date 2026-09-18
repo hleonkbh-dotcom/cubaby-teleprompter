@@ -1497,7 +1497,7 @@ svg {
       </div>
       <div class="live-meter" aria-label="Nivel de señal del micrófono"><div class="live-meter-bar" id="tele-live-meter"></div></div>
     </div>
-    <div class="text-small text-muted live-help"><strong>SYNC REAL FINAL CORREGIDO · ESCENARIO + BPM AUTO:</strong> conserva el localizador validado, timestamps reales de letra y scroll lock. Añade BPM automático para el click, barra compactable y PLAY/PAUSA flotante de escenario.</div>
+    <div class="text-small text-muted live-help"><strong>SYNC REAL FINAL CORREGIDO · AUTO SONG + ANTI-REBOTE:</strong> conserva el localizador validado, timestamps reales de letra y scroll lock. Añade BPM automático para el click, barra compactable y PLAY/PAUSA flotante de escenario.</div>
     <div class="tele-cal-row" aria-label="Calibración avanzada" style="display:none">
       <button type="button" class="btn" id="tele-cal-prepare">Calibrar canción</button>
       <button type="button" class="btn btn-primary" id="tele-cal-start" disabled>INICIO CANCIÓN</button>
@@ -1509,7 +1509,7 @@ svg {
       <input type="file" id="tele-cal-file" accept="application/json,.json" hidden>
       <span class="cal-status" id="tele-cal-status">Sin calibrar.</span>
     </div>
-    <div class="tele-status text-small text-muted" id="tele-status" aria-live="polite">Listo. Espacio: PLAY/PAUSA · V: Sync real · C: click · T: Tap Tempo · [ / ]: línea · ←/→: canción · barra compactable.</div>
+    <div class="tele-status text-small text-muted" id="tele-status" aria-live="polite">Listo. PLAY arma Sync automáticamente · Espacio: PLAY/PAUSA · V: Sync real · C: click · T: Tap Tempo · [ / ]: línea · ←/→: canción · barra compactable.</div>
     <div class="card drummer-strip" aria-live="polite">
       <div><span class="drummer-kicker">BATERÍA - AHORA</span><span class="drummer-value" id="tele-now">Preparando...</span></div>
       <div><span class="drummer-kicker">SIGUE</span><span class="drummer-value" id="tele-up-next">Preparando...</span></div>
@@ -1751,6 +1751,17 @@ svg {
       let musicLineBias = 0;
       let musicLastAppliedLineIndex = -2;
       let musicTimelineRequestToken = 0;
+
+      // FINAL: estabilidad de escenario + detección automática de canción.
+      let musicAllowJumpUntil = 0;
+      let musicTargetClockMode = false;
+      let musicFirstActiveAt = null;
+      let musicLostSince = null;
+      let songDetectRunning = false;
+      let songDetectLastAt = 0;
+      let songDetectRunId = 0;
+      let songDetectHistory = [];
+      let songAutoSwitchCooldownUntil = 0;
 
       // Calibración avanzada (oculta del flujo principal).
       let calibrationMode = false;
@@ -2424,6 +2435,203 @@ svg {
         };
       }
 
+
+      function normalizedArtistName(value) {
+        return String(value || "")
+          .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, " ")
+          .trim();
+      }
+
+      function currentVersionNeedsTargetClock() {
+        const song = songs[currentIndex];
+        const target = TARGET_TRACK_META[Number(song?.number)];
+        const ref = musicReference;
+        if (!song || !target || !ref) return false;
+        const refArtist = normalizedArtistName(ref.artist);
+        const targetArtist = normalizedArtistName(target.artist);
+        const artistDiffers = refArtist && targetArtist && refArtist !== targetArtist;
+        const rd = Number(ref.duration) || 0;
+        const td = Number(target.duration) || 0;
+        const durationDiffers = rd > 0 && td > 0 && Math.abs(rd - td) > Math.max(8, td * 0.055);
+        return artistDiffers || durationDiffers;
+      }
+
+      function startTargetClockFallback(nowMs, reason = "versión del set distinta") {
+        if (musicTargetClockMode || stageManualPaused || musicFirstActiveAt == null) return false;
+        musicTargetClockMode = true;
+        musicPositionSec = Math.max(0, (nowMs - musicFirstActiveAt) / 1000);
+        musicPositionUpdatedAt = nowMs;
+        musicRate = 1;
+        musicFrozen = false;
+        musicTracking = true;
+        musicBadMatchCount = 0;
+        musicLostSince = null;
+        liveStartState = "tracking";
+        musicAllowJumpUntil = nowMs + 2500;
+        if (!playing) {
+          playing = true;
+          playButton.textContent = "PAUSA";
+          playButton.setAttribute("aria-pressed", "true");
+          lastTime = 0;
+          lastFocusTime = 0;
+          scrollRemainder = 0;
+          requestWakeLock();
+          if (frameId === null) frameId = requestAnimationFrame(tick);
+        }
+        status.textContent = `SYNC ESTRUCTURAL · ${songs[currentIndex].title} · ${reason}. Manteniendo avance estable mientras busca una huella compatible.`;
+        return true;
+      }
+
+      function resetSongAutoDetection() {
+        songDetectHistory = [];
+        songDetectRunId += 1;
+        songDetectRunning = false;
+      }
+
+      async function scanSongLibrary(query, runId) {
+        const scored = [];
+        let processed = 0;
+        for (const meta of MUSIC_REF_PACK.refs) {
+          if (runId !== songDetectRunId || !liveSyncEnabled || stageManualPaused) return null;
+          const ref = musicRefForSong(meta.n);
+          if (!ref) continue;
+          const result = globalMusicCandidate(query, ref);
+          if (result && Number.isFinite(result.candidate) && Number.isFinite(result.score)) {
+            scored.push({
+              songNumber: Number(meta.n),
+              score: Number(result.score),
+              position: Number(result.candidate),
+              rate: Number(result.step) || 1,
+              coverMode: Boolean(result.coverMode)
+            });
+          }
+          processed += 1;
+          // Reparte el trabajo para no congelar la interfaz.
+          if (processed % 4 === 0) {
+            await new Promise((resolve) => setTimeout(resolve, 0));
+          }
+        }
+        scored.sort((a, b) => b.score - a.score);
+        if (!scored.length) return null;
+        const top = scored[0];
+        const second = scored[1] || null;
+        top.songGap = second ? top.score - second.score : 1;
+        return top;
+      }
+
+      function confirmDetectedSong(result, nowMs) {
+        if (!result || !Number.isFinite(result.songNumber)) return null;
+        // La señal captada por bocina/escenario suele bajar la similitud absoluta;
+        // la confirmación se basa sobre todo en trayectoria temporal coherente.
+        if (result.score < 0.66) {
+          songDetectHistory = [];
+          return null;
+        }
+
+        songDetectHistory.push({
+          songNumber: result.songNumber,
+          position: result.position,
+          rate: result.rate,
+          score: result.score,
+          gap: result.songGap || 0,
+          at: nowMs
+        });
+        songDetectHistory = songDetectHistory.filter((item) => nowMs - item.at <= 7000).slice(-5);
+
+        const same = songDetectHistory.filter((item) => item.songNumber === result.songNumber);
+        const required = result.score >= 0.84 ? 2 : 3;
+        if (same.length < required) return null;
+
+        const recent = same.slice(-required);
+        const first = recent[0];
+        const last = recent[recent.length - 1];
+        const elapsed = Math.max(0.001, (last.at - first.at) / 1000);
+        const advance = last.position - first.position;
+        const expectedRate = median(recent.map((item) => item.rate)) || 1;
+        const expectedAdvance = elapsed * expectedRate;
+        const tolerance = Math.max(1.8, elapsed * 0.65);
+
+        if (
+          advance < elapsed * 0.35 ||
+          advance > elapsed * 1.75 ||
+          Math.abs(advance - expectedAdvance) > tolerance
+        ) {
+          songDetectHistory = [last];
+          return null;
+        }
+
+        const projected = recent
+          .map((item) => item.position + ((nowMs - item.at) / 1000) * item.rate)
+          .sort((a, b) => a - b);
+        if (projected[projected.length - 1] - projected[0] > 3.5) {
+          songDetectHistory = [last];
+          return null;
+        }
+
+        const avgScore = recent.reduce((sum, item) => sum + item.score, 0) / recent.length;
+        if (avgScore < 0.68) return null;
+
+        const middle = Math.floor(projected.length / 2);
+        const position = projected.length % 2
+          ? projected[middle]
+          : (projected[middle - 1] + projected[middle]) / 2;
+
+        return { songNumber: result.songNumber, position, rate: expectedRate, score: avgScore };
+      }
+
+      function switchToDetectedSong(detected, nowMs) {
+        if (!detected || nowMs < songAutoSwitchCooldownUntil) return false;
+        const nextIndex = songs.findIndex((song) => Number(song.number) === Number(detected.songNumber));
+        if (nextIndex < 0 || nextIndex === currentIndex) return false;
+
+        const previousTitle = songs[currentIndex].title;
+        songAutoSwitchCooldownUntil = nowMs + 7000;
+        songDetectHistory = [];
+        songDetectRunId += 1;
+        renderSong(nextIndex, false);
+        musicAllowJumpUntil = nowMs + 5000;
+        musicTargetClockMode = false;
+        musicFirstActiveAt = nowMs - Math.max(0, detected.position) * 1000;
+        const locked = lockMusicPosition(detected.position, detected.rate, detected.score, nowMs, true);
+        status.textContent = locked === false
+          ? `CAMBIO AUTO detectado: ${previousTitle} → ${songs[currentIndex].title}. Confirmando posición…`
+          : `CAMBIO AUTO · ${previousTitle} → ${songs[currentIndex].title} · ${formatMusicTime(detected.position)}.`;
+        return true;
+      }
+
+      function requestSongAutoDetection(nowMs) {
+        if (
+          songDetectRunning ||
+          stageManualPaused ||
+          musicQueryFrames.length < 28 ||
+          nowMs < songAutoSwitchCooldownUntil ||
+          nowMs - songDetectLastAt < 1100
+        ) return;
+
+        songDetectLastAt = nowMs;
+        songDetectRunning = true;
+        const runId = ++songDetectRunId;
+        const query = musicQueryFrames.slice(-32).map((frame) => new Float32Array(frame));
+
+        scanSongLibrary(query, runId)
+          .then((result) => {
+            if (runId !== songDetectRunId || !result) return;
+            const confirmed = confirmDetectedSong(result, performance.now());
+            if (
+              confirmed &&
+              Number(confirmed.songNumber) !== Number(songs[currentIndex]?.number)
+            ) {
+              switchToDetectedSong(confirmed, performance.now());
+            }
+          })
+          .catch(() => {})
+          .finally(() => {
+            if (runId === songDetectRunId) songDetectRunning = false;
+          });
+      }
+
       function localMusicCandidate(query, ref, estimated) {
         if (!Number.isFinite(estimated)) return null;
         const steps = [0.90, 1.0, 1.10];
@@ -2543,7 +2751,33 @@ svg {
       }
 
       function lockMusicPosition(position, rate, score, nowMs, isRelocation = false) {
-        if (stageManualPaused) return;
+        if (stageManualPaused) return false;
+        const previousPosition = musicPositionSec != null ? currentMusicPosition(nowMs) : null;
+        const freeJump = nowMs <= musicAllowJumpUntil;
+
+        // Anti-rebote: una coincidencia aislada en un coro repetido no puede mandar
+        // el teleprompter decenas de segundos hacia atrás/adelante.
+        if (
+          isRelocation &&
+          previousPosition != null &&
+          !freeJump &&
+          !musicTargetClockMode
+        ) {
+          const jump = Number(position) - Number(previousPosition);
+          if (jump < -4.0 || jump > 12.0) {
+            musicPositionSec = Math.max(0, previousPosition);
+            musicPositionUpdatedAt = nowMs;
+            musicRate = 1;
+            musicFrozen = false;
+            musicTracking = true;
+            musicBadMatchCount = 0;
+            liveStartState = "tracking";
+            status.textContent = `SYNC ESTABLE · ${songs[currentIndex].title}. Se rechazó un salto dudoso de ${Math.round(jump)} s.`;
+            return false;
+          }
+        }
+
+        musicTargetClockMode = false;
         musicPositionSec = Math.max(0, position);
         musicPositionUpdatedAt = nowMs;
         musicRate = Math.max(0.85, Math.min(1.15, rate || 1));
@@ -2567,9 +2801,14 @@ svg {
         }
 
         status.textContent = `${isRelocation ? "REUBICADO" : "SYNC REAL"} · ${songs[currentIndex].title} · ${formatMusicTime(currentMusicPosition(nowMs))}.`;
+        musicLostSince = null;
+        return true;
       }
 
       function enterMusicRelocation(nowMs, reason = "buscando nueva posición") {
+        if (/reanudada|manual|reinicio/i.test(String(reason))) {
+          musicAllowJumpUntil = nowMs + 6000;
+        }
         if (musicPositionSec != null) {
           musicPositionSec = currentMusicPosition(nowMs);
           musicPositionUpdatedAt = nowMs;
@@ -2952,6 +3191,10 @@ svg {
       function mapReferenceTimeToLyricTime(referenceTime) {
         const value = Number(referenceTime);
         if (!Number.isFinite(value)) return value;
+        // Cuando la versión real del set no coincide con la huella aprendida
+        // (p. ej. BILLIE JEAN / Weezer), el reloj ya está expresado en tiempo
+        // de la versión objetivo y no debe volver a deformarse.
+        if (musicTargetClockMode) return Math.max(0, value);
         const warp = musicTimeWarpAnchors;
         const anchors = warp?.anchors;
         if (!Array.isArray(anchors) || anchors.length < 2) return value;
@@ -2992,6 +3235,13 @@ svg {
         const token = ++musicTimelineRequestToken;
         musicLineBias = 0;
         musicLastAppliedLineIndex = -2;
+        musicAllowJumpUntil = performance.now() + 2500;
+        musicTargetClockMode = false;
+        musicFirstActiveAt = null;
+        musicLostSince = null;
+        songDetectHistory = [];
+        songDetectRunId += 1;
+        songDetectRunning = false;
         musicReferenceLineTimeline = null;
         musicTimeWarpAnchors = null;
         musicTargetDuration = null;
@@ -3176,6 +3426,23 @@ svg {
           return;
         }
         index = Math.max(0, Math.min(lyricLines.length - 1, index + musicLineBias));
+
+        // Anti-rebote visual: mientras la canción corre normalmente, el texto no
+        // puede regresar a una línea anterior ni brincar muchos versos por una
+        // coincidencia dudosa en coros repetidos.
+        const freeJump = performance.now() <= musicAllowJumpUntil;
+        if (
+          musicLastAppliedLineIndex >= 0 &&
+          liveStartState === "tracking" &&
+          !freeJump
+        ) {
+          if (index < musicLastAppliedLineIndex) {
+            index = musicLastAppliedLineIndex;
+          } else if (index > musicLastAppliedLineIndex + 3) {
+            index = musicLastAppliedLineIndex + 1;
+          }
+        }
+
         if (index !== musicLastAppliedLineIndex) {
           musicLastAppliedLineIndex = index;
           focusLineIndex(index, false);
@@ -3222,6 +3489,10 @@ svg {
         const resumeThreshold = Math.max(0.010, Math.min(0.028, musicActiveRmsEma * 0.48));
         const looksQuiet = rms < quietThreshold && energy < 0.035;
         const looksActive = rms > resumeThreshold || energy > 0.050;
+
+        if (looksActive && musicFirstActiveAt == null) {
+          musicFirstActiveAt = nowMs;
+        }
 
         // PAUSA REAL: congela el tiempo y limpia la ventana para que al volver pueda saltar
         // libremente a 0:00 o a cualquier otro punto.
@@ -3280,7 +3551,9 @@ svg {
             if (confirmed) {
               const relocating = liveStartState === "relocalizing" || musicPositionSec != null;
               lockMusicPosition(confirmed.position, confirmed.rate, result.score, nowMs, relocating);
+              musicLostSince = null;
             } else {
+              if (musicLostSince == null) musicLostSince = nowMs;
               if (result?.score) musicConfidence = result.score;
               const candidateText = result && Number.isFinite(result.candidate)
                 ? ` · candidato ${formatMusicTime(result.candidate)}`
@@ -3289,9 +3562,32 @@ svg {
               const confirmCount = musicCandidateHistory.length
                 ? ` · confirmando ${Math.min(musicCandidateHistory.length, confirmRequired)}/${confirmRequired}`
                 : "";
-              status.textContent = `${liveStartState === "relocalizing" ? "RELOCALIZANDO" : "LOCALIZANDO"} · ${songs[currentIndex].title}${candidateText}${confirmCount}.`;
+
+              // Si la versión real del set es otra grabación/cóver, no se queda
+              // congelado en la primera línea: usa el reloj de la versión objetivo.
+              if (
+                currentVersionNeedsTargetClock() &&
+                musicFirstActiveAt != null &&
+                nowMs - musicFirstActiveAt >= 5200
+              ) {
+                startTargetClockFallback(nowMs, "huella distinta a la versión del set");
+              } else {
+                status.textContent = `${liveStartState === "relocalizing" ? "RELOCALIZANDO" : "LOCALIZANDO"} · ${songs[currentIndex].title}${candidateText}${confirmCount}.`;
+              }
+
+              if (musicLostSince != null && nowMs - musicLostSince >= 1600) {
+                requestSongAutoDetection(nowMs);
+              }
             }
           } else if (result?.mode === "local" && result.score >= (result.coverMode ? 0.76 : 0.82)) {
+            if (musicTargetClockMode) {
+              // Una huella de otra versión no corrige el reloj estable del set salvo
+              // que más adelante se consiga una localización global confirmada.
+              musicConfidence = result.score;
+              musicBadMatchCount = 0;
+              musicLostSince = null;
+              status.textContent = `SYNC ESTRUCTURAL · ${songs[currentIndex].title} · ${formatMusicTime(currentMusicPosition(nowMs))}.`;
+            } else {
             const estimated = currentMusicPosition(nowMs);
             const delta = result.candidate - estimated;
             const maxCorrection = result.coverMode ? 1.35 : 1.80;
@@ -3304,14 +3600,25 @@ svg {
             musicBadMatchCount = 0;
             musicLowSignalSince = null;
             resetMusicCandidateHistory();
+            musicLostSince = null;
             status.textContent = `SYNC REAL · ${songs[currentIndex].title} · ${formatMusicTime(currentMusicPosition(nowMs))}.`;
+            }
           } else {
+            if (musicTargetClockMode) {
+              // Mantén el avance estable; en paralelo busca si en realidad cambió la canción.
+              requestSongAutoDetection(nowMs);
+              updateMusicLabels();
+              updateLiveDisplay();
+              return true;
+            }
             musicBadMatchCount += 1;
+            if (musicLostSince == null) musicLostSince = nowMs;
             if (result?.score) musicConfidence = result.score;
 
             // Si el audio cambió de punto sin una pausa clara (seek/salto), no sigas arrastrando
             // una posición vieja. Tras varios fallos locales se congela y se permite un salto global.
             const badLimit = musicTimeWarpAnchors ? 9 : 5;
+            if (musicBadMatchCount >= 2) requestSongAutoDetection(nowMs);
             if (musicBadMatchCount >= badLimit) {
               enterMusicRelocation(nowMs, "se detectó un salto o pérdida de referencia");
             }
@@ -3374,6 +3681,13 @@ svg {
         musicRelocationReason = "";
         musicLineBias = 0;
         musicLastAppliedLineIndex = -2;
+        musicAllowJumpUntil = 0;
+        musicTargetClockMode = false;
+        musicFirstActiveAt = null;
+        musicLostSince = null;
+        songDetectHistory = [];
+        songDetectRunId += 1;
+        songDetectRunning = false;
         musicReferenceLineTimeline = null;
         musicTimeWarpAnchors = null;
         musicTargetDuration = null;
@@ -4040,15 +4354,41 @@ svg {
         }, 1000);
       }
 
-      function togglePlay() {
+      async function togglePlay() {
         if (countdownTimer) {
           stop("Inicio cancelado.");
           return;
         }
 
+        // PLAY siempre arma/enciende SYNC REAL. Ya no tiene sentido iniciar
+        // desplazamiento manual con el micrófono apagado.
+        if (!liveSyncEnabled) {
+          await startLiveSync();
+          if (!liveSyncEnabled) {
+            status.textContent = "PLAY requiere acceso al micrófono para Sync Vivo. Revisa el permiso del navegador.";
+            return;
+          }
+          stageManualPaused = false;
+          playButton.textContent = "PAUSA";
+          playButton.setAttribute("aria-pressed", "true");
+          status.textContent = `PLAY + SYNC REAL · ${songs[currentIndex].title}. Escuchando y buscando la posición actual…`;
+          updateLiveDisplay();
+          return;
+        }
+
         if (liveSyncEnabled && musicReference) {
           const nowMs = performance.now();
-          if (!stageManualPaused) {
+
+          // Si apenas está armado/localizando, PLAY no lo pausa: confirma que siga escuchando.
+          if (!playing && !stageManualPaused && ["locating", "relocalizing", "baseline", "armed"].includes(liveStartState)) {
+            playButton.textContent = "PAUSA";
+            playButton.setAttribute("aria-pressed", "true");
+            status.textContent = `PLAY + SYNC REAL · ${songs[currentIndex].title}. Escuchando y localizando…`;
+            requestWakeLock();
+            return;
+          }
+
+          if (!stageManualPaused && (playing || musicTracking)) {
             stageManualPaused = true;
             if (musicPositionSec != null) {
               musicPositionSec = currentMusicPosition(nowMs);
@@ -4059,6 +4399,7 @@ svg {
             musicRate = 0;
             musicQueryFrames = [];
             resetMusicCandidateHistory();
+            resetSongAutoDetection();
             liveStartState = "manual-paused";
             playing = false;
             if (frameId !== null) cancelAnimationFrame(frameId);
@@ -4070,14 +4411,21 @@ svg {
             return;
           }
 
+          // Reanudar permite una relocalización libre porque el usuario sí pudo
+          // haber adelantado, regresado o cambiado el punto de reproducción.
           stageManualPaused = false;
+          musicAllowJumpUntil = nowMs + 6500;
+          musicTargetClockMode = false;
           musicFrozen = true;
           musicTracking = false;
           musicRate = 0;
           musicQueryFrames = [];
           resetMusicCandidateHistory();
+          resetSongAutoDetection();
           musicLastCaptureAt = 0;
           musicLastLocateAt = 0;
+          musicFirstActiveAt = null;
+          musicLostSince = null;
           liveStartState = "relocalizing";
           playButton.textContent = "PAUSA";
           playButton.setAttribute("aria-pressed", "true");
@@ -4086,8 +4434,10 @@ svg {
           return;
         }
 
+        // Todas las 48 canciones actuales tienen referencia. Conserva fallback
+        // únicamente por compatibilidad futura.
         if (playing) stop("PAUSA MANUAL.");
-        else beginCountdown(3);
+        else startNow();
       }
 
       function changeSong(delta) {
