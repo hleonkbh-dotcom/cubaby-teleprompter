@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Cubaby · Reparar Fallidas Reales</title>
+<style>
+:root{color-scheme:dark;--bg:#091120;--panel:#141e2f;--border:#2d3a52;--text:#f7f9fc;--muted:#aeb9cb;--blue:#329cff;--green:#64d995;--yellow:#ffd067;--red:#ff7a87}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,sans-serif;padding:20px}
+.wrap{max-width:980px;margin:auto}
+.k{color:#59adff;font-weight:900;letter-spacing:.13em;font-size:13px}
+.card{background:var(--panel);border:1px solid var(--border);border-radius:20px;padding:18px;margin:14px 0}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+button{border:0;border-radius:12px;padding:12px 16px;font-weight:850;font-size:15px;cursor:pointer;margin:4px 5px 4px 0}
+button:disabled{opacity:.4;cursor:not-allowed}
+.primary{background:var(--blue);color:white}.secondary{background:#e9eef6;color:#10151e}.danger{background:#8a2f42;color:white}
+#player{width:100%;aspect-ratio:16/9;background:#000;border-radius:14px;overflow:hidden}
+.status{font-size:21px;font-weight:900;margin:10px 0}
+.ok{color:var(--green)}.warn{color:var(--yellow)}.err{color:var(--red)}
+.muted{color:var(--muted)}.small{font-size:12px;line-height:1.45}
+.progress{height:13px;background:#27334b;border-radius:999px;overflow:hidden}.progress>div{height:100%;width:0;background:var(--blue);transition:width .2s}
+.list{display:grid;gap:9px;margin-top:12px}
+.row{padding:12px;border:1px solid var(--border);border-radius:13px;background:#101827}
+.row b{display:block}.pill{display:inline-block;padding:3px 8px;border-radius:999px;font-size:11px;font-weight:800;margin-top:5px}
+.p-missing{background:#473818;color:#ffd477}.p-done{background:#143a2b;color:#79e4a7}.p-error{background:#4d2029;color:#ff9da8}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.stat{background:#101827;border:1px solid var(--border);border-radius:15px;padding:12px}.stat b{display:block;font-size:28px}
+@media(max-width:760px){.grid{grid-template-columns:1fr}.stats{grid-template-columns:1fr 1fr}body{padding:10px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="k">CUBABY · REPARADOR CORREGIDO</div>
+  <h1>Reparar las 3 fallidas reales</h1>
+  <p class="muted">Objetivo: reparar solamente IRRESPONSABLES, EL ESQUELETO e IN THE END si faltan en el mismo IndexedDB donde ya están las otras referencias.</p>
+
+  <div class="stats">
+    <div class="stat"><span class="muted">Aprendidas</span><b id="learnedCount">—</b><small>de 48</small></div>
+    <div class="stat"><span class="muted">Faltantes reales</span><b id="missingCount">—</b><small>entre estas 3</small></div>
+    <div class="stat"><span class="muted">Objetivo</span><b>48</b><small>referencias</small></div>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <h2>Fuente alternativa</h2>
+      <div id="player"></div>
+      <p class="small muted">Mantén bocinas activas y micrófono habilitado. No usa ni borra las otras 45 referencias.</p>
+    </div>
+
+    <div class="card">
+      <h2>Reparación</h2>
+      <button class="primary" id="repairBtn">REPARAR ESTAS 3</button>
+      <button class="danger" id="stopBtn" disabled>DETENER</button>
+      <div id="status" class="status">Leyendo referencias guardadas…</div>
+      <div class="progress"><div id="progress"></div></div>
+      <p id="info" class="small muted"></p>
+      <div class="progress" style="height:8px"><div id="signal"></div></div>
+      <p class="small muted">Señal del micrófono</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Estado</h2>
+    <div id="missingList" class="list"></div>
+  </div>
+
+  <div class="card">
+    <h2>Al terminar</h2>
+    <button class="secondary" id="exportBtn">EXPORTAR MAESTRO JSON</button>
+    <p id="exportInfo" class="small muted">Exporta cuando el contador total llegue a 48/48.</p>
+  </div>
+</div>
+
+<script src="https://www.youtube.com/iframe_api"></script>
+<script>
+const SONGS = [{"n": 1, "title": "I RAN (SO FAR AWAY)", "artist": "A Flock of Seagulls"}, {"n": 2, "title": "BREAKING THE LAW", "artist": "Judas Priest"}, {"n": 3, "title": "IRRESPONSABLES", "artist": "Babasónicos"}, {"n": 4, "title": "VENENO", "artist": "Zoé"}, {"n": 5, "title": "NUNCA TE DOBLARÁS", "artist": "Jaguares"}, {"n": 6, "title": "MALDITO AMOR", "artist": "La Lupita"}, {"n": 7, "title": "JUST LIKE HEAVEN", "artist": "The Cure"}, {"n": 8, "title": "CLOCKS", "artist": "Coldplay"}, {"n": 9, "title": "DISCO 2000", "artist": "Pulp"}, {"n": 10, "title": "PSYCHO KILLER", "artist": "Talking Heads"}, {"n": 11, "title": "EN LA CIUDAD DE LA FURIA", "artist": "Soda Stereo"}, {"n": 12, "title": "LAS BATALLAS", "artist": "Café Tacvba"}, {"n": 13, "title": "EL ESQUELETO", "artist": "Víctimas del Doctor Cerebro"}, {"n": 14, "title": "DÍA CERO", "artist": "La Ley"}, {"n": 15, "title": "HOY TENGO MIEDO", "artist": "Fobia"}, {"n": 16, "title": "AVIÉNTAME", "artist": "Caifanes"}, {"n": 17, "title": "ROMPECABEZAS", "artist": "Los Concorde"}, {"n": 18, "title": "WITH OR WITHOUT YOU", "artist": "U2"}, {"n": 19, "title": "BILLIE JEAN", "artist": "Michael Jackson"}, {"n": 20, "title": "EVERYBODY WANTS TO RULE THE WORLD", "artist": "Tears for Fears"}, {"n": 21, "title": "A LITTLE RESPECT", "artist": "Erasure"}, {"n": 22, "title": "STARLIGHT", "artist": "Muse"}, {"n": 23, "title": "IN THE END", "artist": "Linkin Park"}, {"n": 24, "title": "DULCE SOLEDAD", "artist": "Enjambre"}, {"n": 25, "title": "HERE WE KUM", "artist": "Molotov"}, {"n": 26, "title": "MI VIDA", "artist": "DLD"}, {"n": 27, "title": "CENIT", "artist": "La Castañeda"}, {"n": 28, "title": "WHITE ROOM", "artist": "Cream"}, {"n": 29, "title": "SMOKE ON THE WATER", "artist": "Deep Purple"}, {"n": 30, "title": "LA GRANGE", "artist": "ZZ Top"}, {"n": 31, "title": "BEDS ARE BURNING", "artist": "Midnight Oil"}, {"n": 32, "title": "VIENTO", "artist": "Caifanes"}, {"n": 33, "title": "JA, JA, JA", "artist": "La Lupita"}, {"n": 34, "title": "HOLD THE LINE", "artist": "Toto"}, {"n": 35, "title": "FRIDAY I'M IN LOVE", "artist": "The Cure"}, {"n": 36, "title": "HASH PIPE", "artist": "Weezer"}, {"n": 37, "title": "GUITARRAS BLANCAS", "artist": "Los Enanitos Verdes"}, {"n": 38, "title": "GIMME THA POWER", "artist": "Molotov"}, {"n": 39, "title": "N.I.B.", "artist": "Black Sabbath"}, {"n": 40, "title": "REBEL YELL", "artist": "Billy Idol"}, {"n": 41, "title": "DEVUÉLVEME A MI CHICA", "artist": "Hombres G"}, {"n": 42, "title": "DON'T YOU (FORGET ABOUT ME)", "artist": "Simple Minds"}, {"n": 43, "title": "KILLING IN THE NAME", "artist": "Rage Against the Machine"}, {"n": 44, "title": "ENTRE DOS TIERRAS", "artist": "Héroes del Silencio"}, {"n": 45, "title": "EL SATÁNICO DR. CADILLAC", "artist": "Los Fabulosos Cadillacs"}, {"n": 46, "title": "QUEREME ASÍ", "artist": "Los Caligaris / Jorge Serrano"}, {"n": 47, "title": "YELLOW LEDBETTER", "artist": "Pearl Jam"}, {"n": 48, "title": "EL FINAL", "artist": "Rostros Ocultos"}];
+const TARGETS = [3,13,23];
+const FALLBACKS = {"3": [{"id": "WcKNQEksfa0", "label": "Irresponsables · Babasónicos · audio oficial / Infame"}], "13": [{"id": "Cjhxrky2VyE", "label": "El Esqueleto · Víctimas del Doctor Cerebro · audio oficial 1993"}, {"id": "CwBQ-cVWi9k", "label": "El Esqueleto · video de la versión original · respaldo"}], "23": [{"id": "eVTXPUF4Oz4", "label": "In The End · Linkin Park · Official HD Music Video"}]};
+const DB_NAME='CubabyReferences', DB_VERSION=1, STORE='refs';
+
+let db=null, player=null, playerReady=false;
+let stream=null, ctx=null, sourceNode=null, analyser=null;
+let timer=null, running=false, queue=[], qpos=0, current=null, sourceIndex=0, frames=[];
+
+const $=id=>document.getElementById(id);
+function fmt(s){if(!Number.isFinite(s))return'--:--';const m=Math.floor(s/60),ss=Math.floor(s%60);return `${m}:${String(ss).padStart(2,'0')}`;}
+
+function openDB(){
+  return new Promise((resolve,reject)=>{
+    const req=indexedDB.open(DB_NAME,DB_VERSION);
+    req.onupgradeneeded=()=>{const d=req.result;if(!d.objectStoreNames.contains(STORE))d.createObjectStore(STORE,{keyPath:'n'});}
+    req.onsuccess=()=>{db=req.result;resolve(db)}; req.onerror=()=>reject(req.error);
+  });
+}
+function dbPut(v){return new Promise((res,rej)=>{const tx=db.transaction(STORE,'readwrite');tx.objectStore(STORE).put(v);tx.oncomplete=()=>res();tx.onerror=()=>rej(tx.error);})}
+function dbAll(){return new Promise((res,rej)=>{const r=db.transaction(STORE).objectStore(STORE).getAll();r.onsuccess=()=>res(r.result||[]);r.onerror=()=>rej(r.error);})}
+
+window.onYouTubeIframeAPIReady=()=>{
+  player=new YT.Player('player',{
+    videoId:'WcKNQEksfa0',
+    playerVars:{playsinline:1,rel:0,modestbranding:1},
+    events:{onReady:()=>{playerReady=true;},onStateChange:onYTState,onError:onYTError}
+  });
+};
+
+async function ensureMic(){
+  if(stream)return;
+  stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false},video:false});
+  ctx=new (window.AudioContext||window.webkitAudioContext)();
+  sourceNode=ctx.createMediaStreamSource(stream);
+  analyser=ctx.createAnalyser(); analyser.fftSize=4096; analyser.smoothingTimeConstant=.12; sourceNode.connect(analyser);
+}
+function features(){
+  const bins=new Uint8Array(analyser.frequencyBinCount); analyser.getByteFrequencyData(bins);
+  const td=new Uint8Array(analyser.fftSize); analyser.getByteTimeDomainData(td);
+  let ss=0;for(const v of td){const x=(v-128)/128;ss+=x*x}
+  const rms=Math.sqrt(ss/td.length);$('signal').style.width=Math.min(100,rms*500)+'%';
+
+  const log=[],nBands=24,nyq=ctx.sampleRate/2,minF=70,maxF=Math.min(5000,nyq-1);
+  for(let b=0;b<nBands;b++){
+    const f1=minF*Math.pow(maxF/minF,b/nBands),f2=minF*Math.pow(maxF/minF,(b+1)/nBands);
+    const i1=Math.max(1,Math.floor(f1/nyq*bins.length)),i2=Math.max(i1+1,Math.floor(f2/nyq*bins.length));
+    let sum=0,c=0;for(let i=i1;i<i2&&i<bins.length;i++){sum+=Math.log1p(bins[i]);c++}log.push(c?sum/c:0);
+  }
+  let norm=Math.sqrt(log.reduce((a,v)=>a+v*v,0))||1;for(let i=0;i<log.length;i++)log[i]/=norm;
+  const chroma=new Array(12).fill(0);
+  for(let i=2;i<bins.length;i++){const f=i*nyq/bins.length;if(f<80||f>3000)continue;const midi=69+12*Math.log2(f/440);const pc=((Math.round(midi)%12)+12)%12;chroma[pc]+=Math.pow(bins[i]/255,2);}
+  norm=Math.sqrt(chroma.reduce((a,v)=>a+v*v,0))||1;for(let i=0;i<12;i++)chroma[i]/=norm;
+  return {r:rms,v:log.concat(chroma)};
+}
+function startSampler(){
+  clearInterval(timer);
+  timer=setInterval(()=>{
+    if(!running||!current||!player||player.getPlayerState()!==YT.PlayerState.PLAYING)return;
+    const f=features(),t=player.getCurrentTime();
+    if(f.r>.005)frames.push({t:+t.toFixed(3),v:f.v.map(x=>+x.toFixed(4))});
+    $('info').textContent=`${fmt(t)} · ${frames.length} muestras · ${current.title}`;
+  },180);
+}
+
+function songByN(n){
+  return SONGS.find(s=>s.n===n) || ({n,title:'Canción '+n,artist:''});
+}
+
+async function scan(){
+  const refs=await dbAll(), learned=new Set(refs.map(r=>r.n));
+  const missing=TARGETS.filter(n=>!learned.has(n)).map(songByN);
+  $('learnedCount').textContent=refs.length;
+  $('missingCount').textContent=missing.length;
+  const list=$('missingList');list.innerHTML='';
+
+  for(const n of TARGETS){
+    const s=songByN(n);
+    const done=learned.has(n);
+    const d=document.createElement('div');d.className='row';
+    d.innerHTML=`<b>${String(n).padStart(2,'0')} · ${s.title}</b><span class="muted">${s.artist||''}</span><br><span class="pill ${done?'p-done':'p-missing'}">${done?'APRENDIDA ✓':'FALTA REPARAR'}</span>`;
+    list.appendChild(d);
+  }
+
+  if(!missing.length){
+    $('status').innerHTML='<span class="ok">Las 3 fallidas ya están reparadas ✓</span>';
+    $('repairBtn').disabled=true;
+  }else{
+    $('status').textContent=`Faltan ${missing.length} de estas 3.`;
+  }
+  return missing;
+}
+
+async function startRepair(){
+  if(!playerReady){$('status').textContent='Espera unos segundos a que cargue YouTube.';return}
+  try{await ensureMic();if(ctx.state==='suspended')await ctx.resume()}catch(e){$('status').textContent='No pude abrir micrófono: '+e.name;return}
+  queue=await scan();
+  if(!queue.length)return;
+  qpos=0;running=true;$('repairBtn').disabled=true;$('stopBtn').disabled=false;
+  nextSong();
+}
+
+function nextSong(){
+  clearInterval(timer);
+  if(!running)return;
+  if(qpos>=queue.length){finishRepair();return}
+  current=queue[qpos];sourceIndex=0;trySource();
+}
+
+function trySource(){
+  clearInterval(timer);frames=[];
+  const candidates=FALLBACKS[current.n]||[];
+  if(sourceIndex>=candidates.length){
+    $('status').innerHTML=`<span class="err">No se pudo reparar ${current.title}.</span>`;
+    qpos++;setTimeout(nextSong,1000);return;
+  }
+  const src=candidates[sourceIndex];
+  $('status').textContent=`${qpos+1}/${queue.length} · ${current.title}`;
+  $('info').textContent=`Fuente: ${src.label}`;
+  $('progress').style.width=(qpos/queue.length*100)+'%';
+  player.loadVideoById({videoId:src.id,startSeconds:0});
+  startSampler();
+}
+
+async function onYTState(ev){
+  if(!running||!current)return;
+  if(ev.data===YT.PlayerState.ENDED){
+    clearInterval(timer);
+    if(frames.length>=100){
+      const src=FALLBACKS[current.n][sourceIndex];
+      await dbPut({n:current.n,title:current.title,artist:current.artist,youtubeId:src.id,created:new Date().toISOString(),duration:frames.at(-1).t,frames});
+      qpos++;await scan();setTimeout(nextSong,800);
+    }else{
+      sourceIndex++;setTimeout(trySource,600);
+    }
+  }
+}
+
+function onYTError(ev){
+  if(!running||!current)return;
+  clearInterval(timer);
+  sourceIndex++;
+  $('info').textContent=`Fuente rechazada (${ev.data}). Probando alternativa…`;
+  setTimeout(trySource,600);
+}
+
+async function finishRepair(){
+  running=false;clearInterval(timer);$('progress').style.width='100%';
+  $('repairBtn').disabled=false;$('stopBtn').disabled=true;
+  await scan();
+  const refs=await dbAll();
+  $('status').innerHTML = refs.length===48
+    ? '<span class="ok">48/48 REFERENCIAS COMPLETAS ✓</span>'
+    : `<span class="warn">Reparación terminada · ${refs.length}/48 aprendidas.</span>`;
+}
+
+function stopRepair(){
+  running=false;clearInterval(timer);if(player)player.pauseVideo();
+  $('repairBtn').disabled=false;$('stopBtn').disabled=true;
+  $('status').textContent='Detenido. No se borró ninguna referencia.';
+}
+
+async function exportMaster(){
+  const refs=await dbAll();
+  const payload={format:'CubabyReferenceMaster',version:1,exported:new Date().toISOString(),count:refs.length,refs};
+  const blob=new Blob([JSON.stringify(payload)],{type:'application/json'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download=`Cubaby_REFERENCIAS_MAESTRAS_${refs.length}_de_48.json`;
+  a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),1500);
+  $('exportInfo').textContent=`Exportado maestro con ${refs.length} referencias.`;
+}
+
+$('repairBtn').onclick=startRepair;
+$('stopBtn').onclick=stopRepair;
+$('exportBtn').onclick=exportMaster;
+
+(async()=>{await openDB();await scan();})();
+</script>
+</body>
+</html>
