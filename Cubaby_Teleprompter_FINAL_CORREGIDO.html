@@ -2617,20 +2617,63 @@ svg {
         return { position:last.candidate, rate:last.step || 1, score:avgScore, delta:medianDelta };
       }
 
-      function referenceMatchesSetVersion(songNumber, ref = null) {
-        const target = TARGET_TRACK_META[Number(songNumber)];
-        const source = ref || MUSIC_REF_META.get(Number(songNumber));
-        if (!target || !source) return true;
-        const norm = (value) => String(value || "")
+      function normalizedTrackText(value) {
+        return String(value || "")
           .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
           .toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
-        const ta = norm(target.artist);
-        const sa = norm(source.artist);
+      }
+
+      // PERFIL DE SEGURIDAD DE SINCRONÍA.
+      // EXACTA: misma grabación aparente y duración prácticamente igual.
+      // ESCALADA: mismo artista/título operativo, pero duración distinta; la huella puede
+      //            identificar/seguir audio y el timing se transforma al reloj del Set.
+      // SEGURA_RELOJ: versión/artist distinto o diferencia grande; la huella NO gobierna posición.
+      // NO_VERIFICADA: todavía no existe metadato objetivo explícito; conserva el comportamiento
+      //                de la referencia aprendida, pero sin prometer que sea la versión del Set.
+      function syncProfileForSong(songNumber, ref = null) {
+        const n = Number(songNumber);
+        const target = TARGET_TRACK_META[n] || null;
+        const source = ref || MUSIC_REF_META.get(n) || null;
+        if (!source) return { mode:"SIN_REFERENCIA", positionTrusted:false, ratio:1, target:null, source:null, diffSec:null, diffPct:null };
+        if (!target) return { mode:"NO_VERIFICADA", positionTrusted:true, ratio:1, target:null, source, diffSec:null, diffPct:null };
+
+        const ta = normalizedTrackText(target.artist);
+        const sa = normalizedTrackText(source.artist);
         const td = Number(target.duration) || 0;
         const sd = Number(source.duration) || 0;
-        if (ta && sa && ta !== sa) return false;
-        if (td && sd && Math.abs(td - sd) > Math.max(9, td * 0.06)) return false;
-        return true;
+        const artistMatch = !ta || !sa || ta === sa;
+        const diffSec = td && sd ? Math.abs(td - sd) : 0;
+        const diffPct = td && sd ? diffSec / td : 0;
+        const ratio = td && sd ? td / sd : 1;
+
+        if (!artistMatch || (td && sd && diffPct > 0.06)) {
+          return { mode:"SEGURA_RELOJ", positionTrusted:false, ratio, target, source, diffSec, diffPct, artistMatch };
+        }
+        if (td && sd && diffPct > 0.02) {
+          return { mode:"ESCALADA", positionTrusted:true, ratio, target, source, diffSec, diffPct, artistMatch };
+        }
+        return { mode:"EXACTA", positionTrusted:true, ratio:1, target, source, diffSec, diffPct, artistMatch };
+      }
+
+      function referenceMatchesSetVersion(songNumber, ref = null) {
+        return syncProfileForSong(songNumber, ref).positionTrusted;
+      }
+
+      function buildDeterministicSetWarp(profile, referenceDuration, targetDuration) {
+        const rd = Number(referenceDuration) || 0;
+        const td = Number(targetDuration) || 0;
+        if (!rd || !td || profile?.mode === "EXACTA" || profile?.mode === "NO_VERIFICADA") return null;
+        const ratio = td / rd;
+        if (!Number.isFinite(ratio) || ratio < 0.72 || ratio > 1.28) return null;
+        return {
+          anchors: [
+            { line:0, ref:0, target:0 },
+            { line:999999, ref:rd, target:td }
+          ],
+          targetDuration: td,
+          deterministic: true,
+          ratio
+        };
       }
 
       // Exploración rápida entre las 48 referencias. Usa solo cromas para tolerar
@@ -3421,78 +3464,32 @@ svg {
         }
 
         musicReferenceLineTimeline = denseReference;
-        musicLineTimeline = denseReference;
-        musicTimelineSource = embedded.quality === "REAL" ? "REAL+" : "PARCIAL+";
-        updateLiveDisplay();
+        const profile = syncProfileForSong(song.number, ref);
+        const targetDuration = Number(profile.target?.duration) || 0;
+        musicTargetDuration = targetDuration || null;
 
-        // Versión real del Set Base: intenta obtener únicamente timestamps sincronizados.
-        // Las letras mostradas siguen siendo las integradas/proporcionadas por el usuario.
-        const targetMeta = musicTargetMeta;
-        if (targetMeta) {
-          musicTargetDuration = Number(targetMeta.duration) || null;
-          const cache = readTargetTimingCache();
-          const cached = cache[String(song.number)];
-          const key = targetMetaKey(targetMeta);
-          let targetResult = null;
+        // Regla determinista: jamás descargar timings externos durante el ensayo. La misma
+        // base incrustada gobierna las 48 canciones. Si la versión objetivo conserva artista
+        // pero cambia duración, se transforma TODO el mapa con una única escala monotónica.
+        // Esto evita mezclar huella A + LRC B + versión C, que era la principal fuente de drift.
+        const warp = buildDeterministicSetWarp(profile, referenceDuration, targetDuration);
+        musicTimeWarpAnchors = warp;
 
-          if (
-            cached &&
-            cached.key === key &&
-            Array.isArray(cached.times) &&
-            cached.times.length === lyricLines.length &&
-            Number(cached.coverage) >= 0.34
-          ) {
-            targetResult = {
-              times: cached.times.map(Number),
-              coverage: Number(cached.coverage),
-              matchedIndexes: Array.isArray(cached.matchedIndexes) ? cached.matchedIndexes.map(Number) : []
-            };
-          } else if (navigator.onLine !== false) {
-            try {
-              const lrc = await fetchSyncedLyricsForTarget(song, targetMeta);
-              if (token !== musicTimelineRequestToken) return;
-              const synced = parseSyncedLyrics(lrc || "");
-              const appLines = lyricLines.map((line) => line.textContent || "");
-              const built = buildTimelineFromSyncedLyrics(appLines, synced, musicTargetDuration || referenceDuration);
-              if (built && built.coverage >= 0.34) {
-                targetResult = built;
-                saveTargetTimingCache(song.number, {
-                  key,
-                  times: built.times,
-                  coverage: built.coverage,
-                  matchedIndexes: built.matchedIndexes || [],
-                  updatedAt: new Date().toISOString()
-                });
-              }
-            } catch (_) {}
-          }
-
-          if (token !== musicTimelineRequestToken) return;
-
-          if (targetResult && Array.isArray(targetResult.times) && targetResult.times.length === lyricLines.length) {
-            const targetPoints = targetResult.times.map((t, line) => ({
-              line,
-              t: Number(t),
-              confidence: (targetResult.matchedIndexes || []).includes(line) ? 0.98 : 0.65,
-              interpolated: !(targetResult.matchedIndexes || []).includes(line)
-            }));
-            const warp = buildTimeWarp(
-              denseReference,
-              targetResult.times,
-              targetResult.matchedIndexes,
-              musicTargetDuration
-            );
-
-            musicLineTimeline = targetPoints;
-            musicTimeWarpAnchors = warp;
-            musicTimelineSource = warp ? "SET" : "SET-DIRECTO";
-            updateLiveDisplay();
-          }
+        if (warp) {
+          const ratio = Number(warp.ratio) || 1;
+          musicLineTimeline = denseReference.map((point) => ({
+            ...point,
+            t: Math.max(0, Number(point.t) * ratio),
+            confidence: Math.min(Number(point.confidence) || 0.7, profile.mode === "SEGURA_RELOJ" ? 0.55 : 0.90),
+            transformed: true
+          }));
+          musicTimelineSource = profile.mode === "SEGURA_RELOJ" ? "SAFE-ESCALA" : "SET-ESCALA";
+        } else {
+          musicLineTimeline = denseReference;
+          musicTimelineSource = embedded.quality === "REAL" ? "REAL+" : "PARCIAL+";
         }
 
-        if (musicPositionSec != null) {
-          applyMusicPositionToLyrics(currentMusicPosition());
-        }
+        if (musicPositionSec != null) applyMusicPositionToLyrics(currentMusicPosition());
       }
 
       function lineIndexForMusicTime(positionSec) {
@@ -3534,72 +3531,65 @@ svg {
       function applyMusicPositionToLyrics(positionSec) {
         if (!lyricLines.length || !musicLineTimeline || !musicLineTimeline.length) return;
         const nowMs = performance.now();
-        const detectedLyricClock = mapReferenceTimeToLyricTime(positionSec);
-        let detectedIndex = lineIndexForMusicTime(detectedLyricClock);
+        const lyricClock = mapReferenceTimeToLyricTime(positionSec);
+        let index = lineIndexForMusicTime(lyricClock);
 
-        if (detectedIndex < 0 && musicLastAppliedLineIndex < 0) {
-          musicLastMappedLyricClock = detectedLyricClock;
+        if (index < 0) {
+          musicLastMappedLyricClock = lyricClock;
           return;
         }
 
-        detectedIndex = Math.max(0, Math.min(lyricLines.length - 1, detectedIndex + musicLineBias));
-        let previous = musicLastAppliedLineIndex;
+        index = Math.max(0, Math.min(lyricLines.length - 1, index + musicLineBias));
+        const previous = musicLastAppliedLineIndex;
 
-        // ACQUIRE / RELOCALIZACIÓN: una única colocación absoluta confirmada.
-        if (musicVisualSnapPending || previous < 0 || musicVisualClockSec == null) {
-          const snapIndex = Math.max(0, detectedIndex);
+        // Sólo ACQUIRE/BUSCAR/cambio de canción puede colocar una línea absoluta.
+        if (musicVisualSnapPending || previous < 0) {
           musicVisualSnapPending = false;
-          musicLastAppliedLineIndex = snapIndex;
+          musicLastAppliedLineIndex = index;
           musicLineCandidateIndex = null;
           musicLineCandidateSince = 0;
           musicVisualLastChangeAt = nowMs;
-          // Ancla el reloj visual a la posición detectada sólo una vez. Desde aquí
-          // el matcher deja de decidir qué párrafo mostrar.
-          musicVisualClockSec = Math.max(0, detectedLyricClock);
-          musicVisualClockUpdatedAt = nowMs;
-          focusLineIndex(snapIndex, false);
-          musicLastMappedLyricClock = detectedLyricClock;
+          focusLineIndex(index, false);
+          musicLastMappedLyricClock = lyricClock;
           return;
         }
 
-        // RELOJ VISUAL CONTINUO: avanza por tiempo real/tempo, sin aceptar saltos
-        // absolutos del matcher. Esto elimina tanto el salto de coro como el bloqueo.
-        const elapsed = Math.max(0, Math.min(0.5, (nowMs - musicVisualClockUpdatedAt) / 1000));
-        const visualRate = Math.max(0.90, Math.min(1.10, Number(musicRate) || 1));
-        musicVisualClockSec += elapsed * visualRate;
-        musicVisualClockUpdatedAt = nowMs;
-
-        const visualIndex = lineIndexForMusicTime(musicVisualClockSec);
-        previous = musicLastAppliedLineIndex;
-
-        // Nunca retroceder automáticamente. Una corrección hacia atrás es manual o BUSCAR.
-        if (visualIndex <= previous) {
+        // El reloj musical es la única autoridad. El texto jamás retrocede automáticamente.
+        if (index <= previous) {
           musicLineCandidateIndex = null;
           musicLineCandidateSince = 0;
-          musicLastMappedLyricClock = detectedLyricClock;
+          musicLastMappedLyricClock = lyricClock;
           return;
         }
 
-        // Avance estrictamente secuencial: máximo UNA línea por ciclo.
-        const nextIndex = Math.min(lyricLines.length - 1, previous + 1);
-        const requiredStableMs = 70;
-        if (musicLineCandidateIndex !== nextIndex) {
-          musicLineCandidateIndex = nextIndex;
+        // Durante tracking estable no aceptamos un salto visual de varias líneas. Como las
+        // correcciones locales del reloj son sub-segundo, un salto >1 significa pérdida de
+        // continuidad, pestaña suspendida o una adquisición dudosa. Se conserva la línea y
+        // BUSCAR sigue disponible para una relocalización explícita.
+        if (index > previous + 1) {
+          status.textContent = `SECUENCIA PROTEGIDA · ${songs[currentIndex].title}. El reloj pidió saltar ${index - previous} líneas; se conserva la línea actual.`;
+          musicLastMappedLyricClock = lyricClock;
+          return;
+        }
+
+        // Una sola línea siguiente: debe ser coherente durante un instante para filtrar jitter.
+        if (musicLineCandidateIndex !== index) {
+          musicLineCandidateIndex = index;
           musicLineCandidateSince = nowMs;
-          musicLastMappedLyricClock = detectedLyricClock;
+          musicLastMappedLyricClock = lyricClock;
           return;
         }
-        if (nowMs - musicLineCandidateSince < requiredStableMs) {
-          musicLastMappedLyricClock = detectedLyricClock;
+        if (nowMs - musicLineCandidateSince < 90) {
+          musicLastMappedLyricClock = lyricClock;
           return;
         }
 
-        musicLastAppliedLineIndex = nextIndex;
+        musicLastAppliedLineIndex = index;
         musicLineCandidateIndex = null;
         musicLineCandidateSince = 0;
         musicVisualLastChangeAt = nowMs;
-        focusLineIndex(nextIndex, false);
-        musicLastMappedLyricClock = detectedLyricClock;
+        focusLineIndex(index, false);
+        musicLastMappedLyricClock = lyricClock;
       }
 
       function updateMusicLabels() {
@@ -3612,17 +3602,17 @@ svg {
           liveConfidenceLabel.classList.toggle("is-mid", pct >= 62 && pct < 78);
         }
         if (liveTimingLabel) {
-          liveTimingLabel.textContent = musicTimelineSource === "SET"
-            ? "LETRA SET"
-            : (musicTimelineSource === "SET-DIRECTO"
-                ? "LETRA SET"
+          liveTimingLabel.textContent = musicTimelineSource === "SET-ESCALA"
+            ? "LETRA SET✓"
+            : (musicTimelineSource === "SAFE-ESCALA"
+                ? "LETRA SAFE"
                 : (musicTimelineSource.startsWith("REAL")
                     ? "LETRA REAL"
                     : (musicTimelineSource.startsWith("PARCIAL")
                         ? "LETRA PARC.+"
                         : (musicTimelineSource === "PENDIENTE" ? "LETRA PEND." : "LETRA —"))));
-          liveTimingLabel.classList.toggle("is-web", musicTimelineSource === "SET" || musicTimelineSource === "SET-DIRECTO" || musicTimelineSource.startsWith("REAL") || musicTimelineSource.startsWith("PARCIAL"));
-          liveTimingLabel.classList.toggle("is-approx", musicTimelineSource.startsWith("PARCIAL") || musicTimelineSource === "PENDIENTE" || musicTimelineSource === "SIN_MAPA");
+          liveTimingLabel.classList.toggle("is-web", musicTimelineSource === "SET-ESCALA" || musicTimelineSource.startsWith("REAL") || musicTimelineSource.startsWith("PARCIAL"));
+          liveTimingLabel.classList.toggle("is-approx", musicTimelineSource === "SAFE-ESCALA" || musicTimelineSource.startsWith("PARCIAL") || musicTimelineSource === "PENDIENTE" || musicTimelineSource === "SIN_MAPA");
         }
       }
 
