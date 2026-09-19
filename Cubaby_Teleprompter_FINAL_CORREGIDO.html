@@ -1440,6 +1440,7 @@ svg {
       </label>
       <button type="button" class="btn btn-ghost" id="tele-next">Siguiente</button>
       <button type="button" class="btn btn-primary" id="tele-play" aria-pressed="false">PLAY</button>
+      <button type="button" class="btn btn-ghost" id="tele-reset" title="Volver al inicio y limpiar la posición de Sync">RESET</button>
       <span class="cubaby-version-badge" aria-label="Versión candidata final">FINAL CORREGIDO</span>
       <button type="button" class="lyric-manager-btn" id="tele-lyrics-manager">Letras <span id="tele-lyrics-progress">27/48</span></button>
       <button type="button" class="btn btn-ghost" id="tele-hide-controls">Ocultar barra</button>
@@ -1497,7 +1498,7 @@ svg {
       </div>
       <div class="live-meter" aria-label="Nivel de señal del micrófono"><div class="live-meter-bar" id="tele-live-meter"></div></div>
     </div>
-    <div class="text-small text-muted live-help"><strong>SYNC REAL FINAL CORREGIDO · ESCENARIO + BPM AUTO:</strong> PLAY arma Sync automáticamente, detecta cambio de canción, estabiliza coros repetidos y conserva timestamps reales, BPM automático y scroll lock.</div>
+    <div class="text-small text-muted live-help"><strong>SYNC REAL FINAL CORREGIDO · ESCENARIO + BPM AUTO:</strong> PLAY arma Sync automáticamente, detecta cambio de canción y después confirma la posición fina; RESET vuelve a 0:00; el reloj continuo evita rebotes y se audita periódicamente.</div>
     <div class="tele-cal-row" aria-label="Calibración avanzada" style="display:none">
       <button type="button" class="btn" id="tele-cal-prepare">Calibrar canción</button>
       <button type="button" class="btn btn-primary" id="tele-cal-start" disabled>INICIO CANCIÓN</button>
@@ -1509,7 +1510,7 @@ svg {
       <input type="file" id="tele-cal-file" accept="application/json,.json" hidden>
       <span class="cal-status" id="tele-cal-status">Sin calibrar.</span>
     </div>
-    <div class="tele-status text-small text-muted" id="tele-status" aria-live="polite">Listo. PLAY arma Sync automáticamente · cambio de canción automático · V: Sync manual · C: click · T: Tap Tempo · [ / ]: línea · ←/→: canción.</div>
+    <div class="tele-status text-small text-muted" id="tele-status" aria-live="polite">Listo. PLAY arma Sync automáticamente · RESET vuelve a 0:00 · cambio automático con localización fina · V: Sync manual · C: click · T: Tap Tempo · [ / ]: línea · ←/→: canción.</div>
     <div class="card drummer-strip" aria-live="polite">
       <div><span class="drummer-kicker">BATERÍA - AHORA</span><span class="drummer-value" id="tele-now">Preparando...</span></div>
       <div><span class="drummer-kicker">SIGUE</span><span class="drummer-value" id="tele-up-next">Preparando...</span></div>
@@ -1519,9 +1520,10 @@ svg {
 
   <div class="cubaby-stage-dock" id="cubaby-stage-dock" aria-label="Controles rápidos de escenario">
     <button type="button" class="stage-play-btn" id="tele-stage-play" aria-pressed="false">▶ PLAY</button>
+    <button type="button" class="stage-controls-btn" id="tele-stage-reset" title="Volver al inicio" aria-label="Volver al inicio">↺ RESET</button>
     <span class="stage-dock-chip" id="tele-stage-bpm">BPM —</span>
     <span class="stage-dock-chip" id="tele-stage-pos">POS —:—</span>
-    <button type="button" class="stage-controls-btn" id="tele-controls-toggle" title="Mostrar u ocultar barra superior" aria-label="Mostrar u ocultar barra superior">▤</button>
+    <button type="button" class="stage-controls-btn" id="tele-controls-toggle" title="Mostrar u ocultar panel superior" aria-label="Mostrar u ocultar panel superior">OCULTAR PANEL</button>
   </div>
 
   <main id="tele-song-view" aria-live="polite"></main>
@@ -1625,11 +1627,13 @@ svg {
       const picker = document.getElementById("tele-song");
       const view = document.getElementById("tele-song-view");
       const playButton = document.getElementById("tele-play");
+      const resetButton = document.getElementById("tele-reset");
       const prevButton = document.getElementById("tele-prev");
       const nextButton = document.getElementById("tele-next");
       const fullscreenButton = document.getElementById("tele-fullscreen");
       const hideControlsButton = document.getElementById("tele-hide-controls");
       const stagePlayButton = document.getElementById("tele-stage-play");
+      const stageResetButton = document.getElementById("tele-stage-reset");
       const stageBpmLabel = document.getElementById("tele-stage-bpm");
       const stagePosLabel = document.getElementById("tele-stage-pos");
       const controlsToggleButton = document.getElementById("tele-controls-toggle");
@@ -1767,6 +1771,10 @@ svg {
       let musicRelocationVote = null;
       let musicRelocationVoteCount = 0;
       let musicExplicitRelocationUntil = 0;
+      let musicSawQuietBeforeStart = false;
+      let musicCleanStartClock = false;
+      let musicPositionAuditHistory = [];
+      let musicLastPositionAuditAt = 0;
 
       // Calibración avanzada (oculta del flujo principal).
       let calibrationMode = false;
@@ -2498,6 +2506,48 @@ svg {
         musicRelocationVoteCount = 0;
       }
 
+      function resetPositionAudit() {
+        musicPositionAuditHistory = [];
+        musicLastPositionAuditAt = 0;
+      }
+
+      // Auditoría de posición independiente del reloj continuo. No mueve por una sola
+      // coincidencia: exige varias ventanas coherentes antes de corregir un lock equivocado.
+      function confirmPositionAudit(result, estimated, nowMs) {
+        if (!result || !Number.isFinite(result.candidate) || !Number.isFinite(estimated)) return null;
+        if (result.score < 0.86 || Number(result.margin || 0) < 0.0020) return null;
+        const delta = result.candidate - estimated;
+        if (Math.abs(delta) < 5.0) {
+          resetPositionAudit();
+          return null;
+        }
+        musicPositionAuditHistory.push({
+          candidate: result.candidate,
+          delta,
+          score: result.score,
+          step: result.step || 1,
+          at: nowMs
+        });
+        musicPositionAuditHistory = musicPositionAuditHistory.filter(x => nowMs - x.at <= 9000).slice(-7);
+        if (musicPositionAuditHistory.length < 4) return null;
+
+        const recent = musicPositionAuditHistory.slice(-4);
+        const deltas = recent.map(x => x.delta).sort((a,b) => a-b);
+        const medianDelta = (deltas[1] + deltas[2]) / 2;
+        if (recent.some(x => Math.abs(x.delta - medianDelta) > 3.2)) return null;
+
+        const first = recent[0], last = recent[recent.length - 1];
+        const elapsed = Math.max(0.001, (last.at - first.at) / 1000);
+        const advance = last.candidate - first.candidate;
+        if (advance < elapsed * 0.45 || advance > elapsed * 1.65) return null;
+
+        const largeJump = Math.abs(medianDelta) > 20;
+        const avgScore = recent.reduce((a,x)=>a+x.score,0) / recent.length;
+        if (largeJump && avgScore < 0.90) return null;
+        resetPositionAudit();
+        return { position:last.candidate, rate:last.step || 1, score:avgScore, delta:medianDelta };
+      }
+
       function referenceMatchesSetVersion(songNumber, ref = null) {
         const target = TARGET_TRACK_META[Number(songNumber)];
         const source = ref || MUSIC_REF_META.get(Number(songNumber));
@@ -2626,14 +2676,25 @@ svg {
         autoSongCooldownUntil = nowMs + 12000;
         resetAutoSongScan();
         resetRelocationConsensus();
+        resetPositionAudit();
+
+        // El detector de biblioteca decide QUÉ canción es. Su posición rápida NO se usa
+        // como reloj definitivo porque un coro repetido puede apuntar a otra repetición.
         renderSong(match.songIndex, false);
         resetLyricStabilityState(2600);
-        const lockedAt = performance.now();
-        lockMusicPosition(match.candidate, match.rate || 1, match.score, lockedAt, true, true);
-        ensureMusicLineTimeline(songs[currentIndex], musicReference).then(() => {
-          applyMusicPositionToLyrics(currentMusicPosition());
-        }).catch(() => {});
-        status.textContent = `CAMBIO AUTOMÁTICO · ${oldTitle} → ${songs[currentIndex].title} · ${formatMusicTime(match.candidate)}.`;
+        musicPositionSec = null;
+        musicPositionUpdatedAt = 0;
+        musicTracking = false;
+        musicFrozen = true;
+        musicRate = 0;
+        musicQueryFrames = [];
+        musicLastCaptureAt = 0;
+        musicLastLocateAt = 0;
+        resetMusicCandidateHistory();
+        liveStartState = "relocalizing";
+        musicExplicitRelocationUntil = performance.now() + 7000;
+        status.textContent = `CAMBIO AUTOMÁTICO · ${oldTitle} → ${songs[currentIndex].title}. Canción confirmada; localizando posición fina…`;
+        updateLiveDisplay();
         return true;
       }
 
@@ -3204,6 +3265,9 @@ svg {
         resetRelocationConsensus();
         musicExplicitRelocationUntil = 0;
         musicUnlocatedActiveSince = null;
+        musicSawQuietBeforeStart = false;
+        musicCleanStartClock = false;
+        resetPositionAudit();
         musicReferenceLineTimeline = null;
         musicTimeWarpAnchors = null;
         musicTargetDuration = null;
@@ -3526,10 +3590,25 @@ svg {
           }
         }
 
+        if (looksQuiet && !musicTracking) musicSawQuietBeforeStart = true;
         if (looksActive) {
-          if (musicUnlocatedActiveSince == null) musicUnlocatedActiveSince = nowMs;
+          if (musicUnlocatedActiveSince == null) {
+            musicUnlocatedActiveSince = nowMs;
+            musicCleanStartClock = musicSawQuietBeforeStart;
+          }
         } else if (!musicTracking) {
           musicUnlocatedActiveSince = null;
+        }
+
+        // Inicio limpio después de silencio: primero sigue el reloj desde 0. El matcher
+        // corrige después. Así un coro repetido no puede arrancar falsamente en 1:xx/2:xx.
+        if (!musicTracking && musicCleanStartClock && looksActive && musicUnlocatedActiveSince != null) {
+          const elapsedFromStart = Math.max(0, (nowMs - musicUnlocatedActiveSince) / 1000);
+          if (elapsedFromStart >= 0.55 && elapsedFromStart <= 18) {
+            lockMusicPosition(elapsedFromStart, 1, 0, nowMs, true, true);
+            musicCleanStartClock = false;
+            status.textContent = `INICIO DETECTADO · ${songs[currentIndex].title} · reloj continuo ${formatMusicTime(elapsedFromStart)}; validando posición en segundo plano.`;
+          }
         }
 
         // Si la huella incrustada pertenece a OTRA grabación del set, nunca se usa para
@@ -3559,6 +3638,20 @@ svg {
           const songMatch = scanOtherSongsForCurrentAudio(nowMs);
           if (songMatch && songMatch.songIndex !== currentIndex) {
             if (autoSwitchToDetectedSong(songMatch, nowMs)) return true;
+          }
+        }
+
+        // Aunque el lock sea bueno, audita periódicamente la posición completa de la
+        // MISMA canción. Solo corrige saltos grandes tras 4 ventanas coherentes.
+        if (setReferenceCompatible && musicTracking && !musicFrozen && musicQueryFrames.length >= 32 &&
+            nowMs - musicLastPositionAuditAt >= 1400) {
+          musicLastPositionAuditAt = nowMs;
+          const auditQuery = musicQueryFrames.slice(-36);
+          const auditResult = globalMusicCandidate(auditQuery, musicReference);
+          const auditFix = confirmPositionAudit(auditResult, currentMusicPosition(nowMs), nowMs);
+          if (auditFix) {
+            lockMusicPosition(auditFix.position, auditFix.rate, auditFix.score, nowMs, true, true);
+            status.textContent = `SYNC CORREGIDO · ${songs[currentIndex].title} · ${formatMusicTime(auditFix.position)}. Consenso global confirmó corrección de ${Math.round(auditFix.delta)} s.`;
           }
         }
 
@@ -3679,6 +3772,9 @@ svg {
         musicRelocationReason = "";
         musicLineBias = 0;
         musicLastAppliedLineIndex = -2;
+        musicSawQuietBeforeStart = false;
+        musicCleanStartClock = false;
+        resetPositionAudit();
         musicReferenceLineTimeline = null;
         musicTimeWarpAnchors = null;
         musicTargetDuration = null;
@@ -4168,7 +4264,7 @@ svg {
         root.classList.toggle("controls-collapsed", Boolean(collapsed));
         localStorage.setItem(CONTROLS_HIDDEN_STORAGE_KEY, String(Boolean(collapsed)));
         if (hideControlsButton) hideControlsButton.textContent = collapsed ? "Mostrar barra" : "Ocultar barra";
-        if (controlsToggleButton) { controlsToggleButton.textContent = "▤"; controlsToggleButton.title = collapsed ? "Mostrar barra superior" : "Ocultar barra superior"; }
+        if (controlsToggleButton) { controlsToggleButton.textContent = collapsed ? "MOSTRAR PANEL" : "OCULTAR PANEL"; controlsToggleButton.title = collapsed ? "Mostrar panel superior" : "Ocultar panel superior"; }
       }
 
       function syncStagePlayButton() {
@@ -4208,6 +4304,54 @@ svg {
           wakeLock.release().catch(() => {});
           wakeLock = null;
         }
+      }
+
+      function resetSongToStart() {
+        const nowMs = performance.now();
+        if (countdownTimer) { window.clearInterval(countdownTimer); countdownTimer = null; }
+        playing = false;
+        if (frameId !== null) cancelAnimationFrame(frameId);
+        frameId = null;
+        lastTime = 0;
+        lastFocusTime = 0;
+        scrollRemainder = 0;
+        stopMetronome();
+        stageManualPaused = false;
+
+        musicPositionSec = 0;
+        musicPositionUpdatedAt = nowMs;
+        musicRate = 0;
+        musicTracking = false;
+        musicFrozen = true;
+        musicConfidence = 0;
+        musicBadMatchCount = 0;
+        musicLastGoodMatchAt = 0;
+        musicQueryFrames = [];
+        musicLastCaptureAt = 0;
+        musicLastLocateAt = 0;
+        musicUnlocatedActiveSince = null;
+        musicSawQuietBeforeStart = false;
+        musicCleanStartClock = false;
+        musicExplicitRelocationUntil = nowMs + 7000;
+        resetMusicCandidateHistory();
+        resetRelocationConsensus();
+        resetPositionAudit();
+        resetLyricStabilityState(7000);
+        musicLineBias = 0;
+        musicLastAppliedLineIndex = -2;
+        liveStartState = liveSyncEnabled ? "locating" : "idle";
+
+        if (lyricLines.length) {
+          focusLineIndex(0, false);
+          virtualPosition = lineDocumentCenter(lyricLines[0]);
+        }
+        playButton.textContent = "PLAY";
+        playButton.setAttribute("aria-pressed", "false");
+        status.textContent = liveSyncEnabled
+          ? `RESET · ${songs[currentIndex].title} en 0:00. Sync sigue escuchando; pulsa PLAY cuando reinicie la banda.`
+          : `RESET · ${songs[currentIndex].title} en 0:00.`;
+        updateMusicLabels();
+        updateLiveDisplay();
       }
 
       function tick(time) {
@@ -4857,6 +5001,7 @@ svg {
         if (strip) strip.style.display = (window.cubabyViewMode || "band") === "personal" ? "grid" : "none";
       });
       playButton.addEventListener("click", togglePlay);
+      if (resetButton) resetButton.addEventListener("click", resetSongToStart);
       prevButton.addEventListener("click", () => changeSong(-1));
       nextButton.addEventListener("click", () => changeSong(1));
       speedInput.addEventListener("input", refreshControls);
@@ -4881,6 +5026,7 @@ svg {
       if (hideControlsButton) hideControlsButton.addEventListener("click", () => setControlsCollapsed(!root.classList.contains("controls-collapsed")));
       if (controlsToggleButton) controlsToggleButton.addEventListener("click", () => setControlsCollapsed(!root.classList.contains("controls-collapsed")));
       if (stagePlayButton) stagePlayButton.addEventListener("click", () => playButton.click());
+      if (stageResetButton) stageResetButton.addEventListener("click", resetSongToStart);
       if (autoBpmInput) {
         autoBpmInput.checked = localStorage.getItem(AUTO_BPM_STORAGE_KEY) !== "false";
         autoBpmInput.addEventListener("change", () => {
