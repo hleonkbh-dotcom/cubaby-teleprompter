@@ -1470,6 +1470,20 @@ svg {
       <button type="button" class="btn btn-ghost" id="tele-hide-controls">Ocultar barra</button>
       <button type="button" class="btn" id="tele-fullscreen">Pantalla completa</button>
     </div>
+    <div class="tele-set-row" aria-label="Modo de detección y sets de ensayo" style="display:flex;gap:.55rem;align-items:end;flex-wrap:wrap;margin:.45rem 0 .15rem;">
+      <label class="form-label" for="tele-detect-mode" style="min-width:120px">Detección
+        <select class="form-select" id="tele-detect-mode">
+          <option value="set">SET</option>
+          <option value="free">LIBRE</option>
+        </select>
+      </label>
+      <label class="form-label" for="tele-set" style="min-width:220px;flex:1">Set activo
+        <select class="form-select" id="tele-set"></select>
+      </label>
+      <button type="button" class="btn btn-ghost" id="tele-set-record" title="Guarda el orden real de canciones durante este ensayo">● GRABAR SET</button>
+      <span class="text-small text-muted" id="tele-set-next">Siguiente probable: —</span>
+    </div>
+
     <div class="tele-secondary-row">
       <label class="form-label" for="tele-speed">Velocidad: <span id="tele-speed-value">18</span> px/s
         <input class="form-range" id="tele-speed" type="range" min="4" max="60" step="1" value="18">
@@ -1652,6 +1666,10 @@ svg {
       songs.forEach(applyUserLyricsToSong);
 
       const picker = document.getElementById("tele-song");
+      const detectModeSelect = document.getElementById("tele-detect-mode");
+      const setSelect = document.getElementById("tele-set");
+      const setRecordButton = document.getElementById("tele-set-record");
+      const setNextLabel = document.getElementById("tele-set-next");
       const view = document.getElementById("tele-song-view");
       const playButton = document.getElementById("tele-play");
       const resetButton = document.getElementById("tele-reset");
@@ -1706,6 +1724,118 @@ svg {
       const nowLabel = document.getElementById("tele-now");
       const upNextLabel = document.getElementById("tele-up-next");
       let currentIndex = Number(localStorage.getItem("cubaby-drummer-v2-song") || 0);
+
+      // SET INTELIGENTE: el orden del ensayo reduce la búsqueda de 48 canciones a
+      // la siguiente esperada + dos alternativas. Si no coinciden, vuelve a LIBRE.
+      const CUBABY_SETS_KEY = "cubaby-rehearsal-sets-v1";
+      const CUBABY_TRANSITIONS_KEY = "cubaby-song-transitions-v1";
+      let detectionMode = localStorage.getItem("cubaby-detection-mode-v1") || "set";
+      let rehearsalSets = [];
+      let activeSetId = localStorage.getItem("cubaby-active-set-v1") || "base48";
+      let rehearsalRecording = false;
+      let prioritySongWinnerNumber = null;
+      let prioritySongWinnerVotes = 0;
+      let lastSongForLearning = Number(songs[currentIndex]?.number || 0);
+
+      function safeJsonParse(value, fallback) {
+        try { return JSON.parse(value); } catch (_) { return fallback; }
+      }
+
+      function loadRehearsalSets() {
+        const stored = safeJsonParse(localStorage.getItem(CUBABY_SETS_KEY), []);
+        rehearsalSets = Array.isArray(stored) ? stored.filter(x => x && Array.isArray(x.order)) : [];
+        if (!rehearsalSets.some(x => x.id === "base48")) {
+          rehearsalSets.unshift({ id:"base48", name:"SET BASE · 48 canciones", order:songs.map(x => Number(x.number)), locked:true });
+        }
+        if (!rehearsalSets.some(x => x.id === activeSetId)) activeSetId = "base48";
+      }
+
+      function saveRehearsalSets() {
+        const custom = rehearsalSets.filter(x => x.id !== "base48");
+        localStorage.setItem(CUBABY_SETS_KEY, JSON.stringify(custom));
+        localStorage.setItem("cubaby-active-set-v1", activeSetId);
+      }
+
+      function activeRehearsalSet() {
+        return rehearsalSets.find(x => x.id === activeSetId) || rehearsalSets[0] || null;
+      }
+
+      function transitionMap() {
+        const t = safeJsonParse(localStorage.getItem(CUBABY_TRANSITIONS_KEY), {});
+        return t && typeof t === "object" ? t : {};
+      }
+
+      function learnSongTransition(fromNumber, toNumber) {
+        const a=Number(fromNumber), b=Number(toNumber);
+        if (!a || !b || a === b) return;
+        const map = transitionMap();
+        const key = `${a}>${b}`;
+        map[key] = Math.min(999, Number(map[key] || 0) + 1);
+        localStorage.setItem(CUBABY_TRANSITIONS_KEY, JSON.stringify(map));
+      }
+
+      function predictedNextSongNumbers(limit=3) {
+        if (detectionMode !== "set") return [];
+        const currentNumber = Number(songs[currentIndex]?.number || 0);
+        const out=[];
+        const set=activeRehearsalSet();
+        if (set && Array.isArray(set.order)) {
+          const pos=set.order.findIndex(n => Number(n) === currentNumber);
+          if (pos >= 0) {
+            for (let k=1;k<=3;k++) {
+              const n=Number(set.order[pos+k]);
+              if (n && !out.includes(n)) out.push(n);
+            }
+          }
+        }
+        const learned=transitionMap();
+        Object.entries(learned)
+          .map(([key,count]) => { const [a,b]=key.split(">").map(Number); return {a,b,count:Number(count)||0}; })
+          .filter(x => x.a === currentNumber && x.b && !out.includes(x.b))
+          .sort((x,y)=>y.count-x.count)
+          .slice(0,3)
+          .forEach(x=>out.push(x.b));
+        return out.slice(0,limit);
+      }
+
+      function updateSetUi() {
+        if (!detectModeSelect || !setSelect) return;
+        detectModeSelect.value = detectionMode;
+        setSelect.innerHTML = "";
+        rehearsalSets.forEach(set => {
+          const o=document.createElement("option"); o.value=set.id; o.textContent=set.name; setSelect.appendChild(o);
+        });
+        setSelect.value=activeSetId;
+        setSelect.disabled = detectionMode !== "set";
+        if (setRecordButton) {
+          setRecordButton.textContent = rehearsalRecording ? "■ TERMINAR SET" : "● GRABAR SET";
+          setRecordButton.classList.toggle("btn-primary", rehearsalRecording);
+        }
+        if (setNextLabel) {
+          const next=predictedNextSongNumbers(3).map(n => songs.find(x=>Number(x.number)===n)?.title).filter(Boolean);
+          setNextLabel.textContent = detectionMode === "set" ? `Siguiente probable: ${next.join(" → ") || "—"}` : "Detector libre · 48 canciones";
+        }
+      }
+
+      function recordCurrentSongInSet(songNumber) {
+        if (!rehearsalRecording) return;
+        const set=activeRehearsalSet();
+        if (!set || set.locked) return;
+        const n=Number(songNumber);
+        if (!n) return;
+        if (Number(set.order[set.order.length-1]) !== n) set.order.push(n);
+        saveRehearsalSets();
+        updateSetUi();
+      }
+
+      function registerConfirmedSongChange(oldNumber, newNumber) {
+        const a=Number(oldNumber), b=Number(newNumber);
+        if (a && b && a !== b) learnSongTransition(a,b);
+        lastSongForLearning=b || lastSongForLearning;
+        recordCurrentSongInSet(b);
+        updateSetUi();
+      }
+
       let playing = false;
       let stageManualPaused = false;
       let frameId = null;
@@ -2720,12 +2850,50 @@ svg {
         return best;
       }
 
+      function scanSetPriorityCandidates(query, nowMs) {
+        if (detectionMode !== "set") return null;
+        const predicted = predictedNextSongNumbers(3);
+        if (!predicted.length) return null;
+        const candidates=[];
+        for (const songNumber of predicted) {
+          const idx=songs.findIndex(x => Number(x.number) === Number(songNumber));
+          if (idx < 0 || idx === currentIndex) continue;
+          const ref=musicRefForSong(songNumber);
+          if (!ref) continue;
+          const result=quickCrossSongCandidate(query, ref);
+          if (!result || !Number.isFinite(result.candidate)) continue;
+          candidates.push({songIndex:idx,songNumber:Number(songNumber),title:songs[idx].title,score:result.score,candidate:result.candidate,rate:result.rate||1,versionCompatible:referenceMatchesSetVersion(songNumber,ref),setPriority:true});
+        }
+        candidates.sort((a,b)=>b.score-a.score);
+        const best=candidates[0], second=candidates[1];
+        if (!best) return null;
+        const margin=second ? best.score-second.score : 1;
+        // El orden del set es una PRIORIDAD, no una orden ciega. Exigimos audio real.
+        const strong = best.score >= 0.78 && (margin >= 0.004 || best.score >= 0.86);
+        if (!strong) { prioritySongWinnerNumber=null; prioritySongWinnerVotes=0; return null; }
+        if (prioritySongWinnerNumber === best.songNumber) prioritySongWinnerVotes += 1;
+        else { prioritySongWinnerNumber=best.songNumber; prioritySongWinnerVotes=1; }
+        const votesNeeded = best.score >= 0.88 ? 1 : 2;
+        if (prioritySongWinnerVotes < votesNeeded) return null;
+        prioritySongWinnerNumber=null; prioritySongWinnerVotes=0;
+        return best;
+      }
+
       function scanOtherSongsForCurrentAudio(nowMs) {
         if (nowMs < autoSongCooldownUntil || musicQueryFrames.length < 24) return null;
         if (nowMs - autoSongLastSliceAt < 320) return null;
         autoSongLastSliceAt = nowMs;
 
         const query = musicQueryFrames.slice(-28);
+
+        // En modo SET, probar primero la siguiente canción esperada. Esto permite el relevo
+        // en ~1–2 s de evidencia en lugar de recorrer primero las 48 referencias.
+        const priorityMatch = scanSetPriorityCandidates(query, nowMs);
+        if (priorityMatch) {
+          resetAutoSongScan();
+          return priorityMatch;
+        }
+
         const batchSize = 16;
         const start = autoSongScanCursor;
         const end = Math.min(songs.length, start + batchSize);
@@ -2799,6 +2967,7 @@ svg {
 
       function autoSwitchToDetectedSong(match, nowMs) {
         if (!match || match.songIndex === currentIndex) return false;
+        const oldNumber = Number(songs[currentIndex]?.number || 0);
         const oldTitle = songs[currentIndex]?.title || "canción anterior";
         autoSongCooldownUntil = nowMs + 6500;
         musicAtEndAwaitingNext = false;
@@ -2810,13 +2979,20 @@ svg {
         // El detector de biblioteca decide QUÉ canción es. Su posición rápida NO se usa
         // como reloj definitivo porque un coro repetido puede apuntar a otra repetición.
         renderSong(match.songIndex, false);
+        registerConfirmedSongChange(oldNumber, Number(songs[currentIndex]?.number || 0));
         musicForceStartFromZero = false;
         resetLyricStabilityState(2600, true);
-        musicPositionSec = null;
-        musicPositionUpdatedAt = 0;
-        musicTracking = false;
-        musicFrozen = true;
-        musicRate = 0;
+
+        // El detector que confirmó la NUEVA canción ya trae una posición aproximada.
+        // Si la referencia es apta para posición, úsala inmediatamente para no dejar
+        // la letra clavada en el primer párrafo mientras se vuelve a localizar desde cero.
+        const switchedProfile = syncProfileForSong(songs[currentIndex].number, musicReference);
+        const canSeedPosition = switchedProfile.positionTrusted && Number.isFinite(Number(match.candidate));
+        musicPositionSec = canSeedPosition ? Math.max(0, Number(match.candidate)) : null;
+        musicPositionUpdatedAt = canSeedPosition ? nowMs : 0;
+        musicTracking = canSeedPosition;
+        musicFrozen = !canSeedPosition;
+        musicRate = canSeedPosition ? 1 : 0;
         musicQueryFrames = [];
         musicLastCaptureAt = 0;
         musicLastLocateAt = 0;
@@ -2828,7 +3004,14 @@ svg {
         if (!referenceMatchesSetVersion(songs[currentIndex].number, musicReference)) {
           musicUnlocatedActiveSince = nowMs - 1800;
         }
-        status.textContent = `CAMBIO AUTOMÁTICO · ${oldTitle} → ${songs[currentIndex].title}. Canción confirmada; localizando posición fina…`;
+        if (canSeedPosition) {
+          ensureMusicLineTimeline(songs[currentIndex], musicReference).then(() => {
+            try { applyMusicPositionToLyrics(currentMusicPosition(performance.now())); } catch (_) {}
+          }).catch(() => {});
+        }
+        status.textContent = canSeedPosition
+          ? `CAMBIO AUTOMÁTICO · ${oldTitle} → ${songs[currentIndex].title}. SET/audio confirmados; posición adquirida.`
+          : `CAMBIO AUTOMÁTICO · ${oldTitle} → ${songs[currentIndex].title}. Canción confirmada; posición en modo seguro.`;
         updateLiveDisplay();
         return true;
       }
@@ -4371,6 +4554,7 @@ svg {
         musicManualGlobalSearchUntil = 0;
         localStorage.setItem("cubaby-drummer-v2-song", String(currentIndex));
         picker.value = String(currentIndex);
+        updateSetUi();
         loadCurrentBpm();
         const song = songs[currentIndex];
         const notes = song.notes.length
@@ -4739,9 +4923,11 @@ svg {
       }
 
       function changeSong(delta) {
+        const oldNumber = Number(songs[currentIndex]?.number || 0);
         stop("Cambio de canción.");
         musicForceStartFromZero = false;
         renderSong(currentIndex + delta);
+        registerConfirmedSongChange(oldNumber, Number(songs[currentIndex]?.number || 0));
       }
 
 
@@ -5169,9 +5355,49 @@ svg {
       });
 
       picker.addEventListener("change", () => {
+        const oldNumber = Number(songs[currentIndex]?.number || 0);
         stop("Cambio de canción.");
         musicForceStartFromZero = false;
         renderSong(Number(picker.value));
+        registerConfirmedSongChange(oldNumber, Number(songs[currentIndex]?.number || 0));
+      });
+
+      loadRehearsalSets();
+      detectionMode = detectionMode === "free" ? "free" : "set";
+      updateSetUi();
+      detectModeSelect?.addEventListener("change", () => {
+        detectionMode = detectModeSelect.value === "free" ? "free" : "set";
+        localStorage.setItem("cubaby-detection-mode-v1", detectionMode);
+        resetAutoSongScan();
+        prioritySongWinnerNumber=null; prioritySongWinnerVotes=0;
+        updateSetUi();
+        status.textContent = detectionMode === "set"
+          ? "MODO SET · primero confirmaré la siguiente canción probable; si no coincide, buscaré entre las 48."
+          : "MODO LIBRE · detector global de 48 canciones.";
+      });
+      setSelect?.addEventListener("change", () => {
+        activeSetId=setSelect.value || "base48";
+        saveRehearsalSets();
+        resetAutoSongScan();
+        updateSetUi();
+      });
+      setRecordButton?.addEventListener("click", () => {
+        if (rehearsalRecording) {
+          rehearsalRecording=false;
+          saveRehearsalSets();
+          updateSetUi();
+          status.textContent = `SET guardado · ${activeRehearsalSet()?.name || "ensayo"}. Se usará como prioridad en próximos ensayos.`;
+          return;
+        }
+        const suggested=`Ensayo ${new Date().toLocaleDateString()}`;
+        const name=window.prompt("Nombre del nuevo set", suggested);
+        if (!name) return;
+        const id=`set-${Date.now()}`;
+        rehearsalSets.push({id,name:String(name).trim() || suggested,order:[Number(songs[currentIndex]?.number || 0)]});
+        activeSetId=id; rehearsalRecording=true; detectionMode="set";
+        localStorage.setItem("cubaby-detection-mode-v1","set");
+        saveRehearsalSets(); updateSetUi();
+        status.textContent = `GRABANDO SET · ${name}. Cubaby guardará el orden real de canciones de este ensayo.`;
       });
 
       document.addEventListener("cubaby-view-mode", () => {
