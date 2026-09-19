@@ -1764,6 +1764,9 @@ svg {
       let autoSongWinnerVotes = 0;
       let autoSongCooldownUntil = 0;
       let musicUnlocatedActiveSince = null;
+      let musicRelocationVote = null;
+      let musicRelocationVoteCount = 0;
+      let musicExplicitRelocationUntil = 0;
 
       // Calibración avanzada (oculta del flujo principal).
       let calibrationMode = false;
@@ -2490,6 +2493,27 @@ svg {
         autoSongWinnerVotes = 0;
       }
 
+      function resetRelocationConsensus() {
+        musicRelocationVote = null;
+        musicRelocationVoteCount = 0;
+      }
+
+      function referenceMatchesSetVersion(songNumber, ref = null) {
+        const target = TARGET_TRACK_META[Number(songNumber)];
+        const source = ref || MUSIC_REF_META.get(Number(songNumber));
+        if (!target || !source) return true;
+        const norm = (value) => String(value || "")
+          .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+          .toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+        const ta = norm(target.artist);
+        const sa = norm(source.artist);
+        const td = Number(target.duration) || 0;
+        const sd = Number(source.duration) || 0;
+        if (ta && sa && ta !== sa) return false;
+        if (td && sd && Math.abs(td - sd) > Math.max(9, td * 0.06)) return false;
+        return true;
+      }
+
       // Exploración rápida entre las 48 referencias. Usa solo cromas para tolerar
       // cambios de timbre (cover, guitarra distinta, banda en vivo, PA de sala).
       function quickCrossSongCandidate(query, ref) {
@@ -2547,7 +2571,7 @@ svg {
         for (let i = start; i < end; i += 1) {
           const song = songs[i];
           const ref = musicRefForSong(song.number);
-          if (!ref) continue;
+          if (!ref || !referenceMatchesSetVersion(song.number, ref)) continue;
           const result = quickCrossSongCandidate(query, ref);
           if (result && Number.isFinite(result.candidate)) {
             autoSongScanScores.push({
@@ -2576,7 +2600,7 @@ svg {
         }
 
         const margin = second ? best.score - second.score : 1;
-        const strong = (best.score >= 0.90 && margin >= 0.008) || (best.score >= 0.80 && margin >= 0.015);
+        const strong = (best.score >= 0.91 && margin >= 0.010) || (best.score >= 0.84 && margin >= 0.020);
         if (!strong) {
           autoSongWinnerNumber = null;
           autoSongWinnerVotes = 0;
@@ -2589,8 +2613,8 @@ svg {
           autoSongWinnerVotes = 1;
         }
 
-        // Dos recorridos completos reducen cambios falsos por coros armónicamente parecidos.
-        if (autoSongWinnerVotes < 2) return null;
+        // Tres recorridos completos: una sola coincidencia armónica nunca cambia de canción.
+        if (autoSongWinnerVotes < 3) return null;
         autoSongWinnerVotes = 0;
         autoSongWinnerNumber = null;
         return best;
@@ -2599,12 +2623,13 @@ svg {
       function autoSwitchToDetectedSong(match, nowMs) {
         if (!match || match.songIndex === currentIndex) return false;
         const oldTitle = songs[currentIndex]?.title || "canción anterior";
-        autoSongCooldownUntil = nowMs + 9000;
+        autoSongCooldownUntil = nowMs + 12000;
         resetAutoSongScan();
+        resetRelocationConsensus();
         renderSong(match.songIndex, false);
         resetLyricStabilityState(2600);
         const lockedAt = performance.now();
-        lockMusicPosition(match.candidate, match.rate || 1, match.score, lockedAt, true);
+        lockMusicPosition(match.candidate, match.rate || 1, match.score, lockedAt, true, true);
         ensureMusicLineTimeline(songs[currentIndex], musicReference).then(() => {
           applyMusicPositionToLyrics(currentMusicPosition());
         }).catch(() => {});
@@ -2692,9 +2717,38 @@ svg {
         return { position, rate };
       }
 
-      function lockMusicPosition(position, rate, score, nowMs, isRelocation = false) {
-        if (stageManualPaused) return;
-        musicPositionSec = Math.max(0, position);
+      function lockMusicPosition(position, rate, score, nowMs, isRelocation = false, forceJump = false) {
+        if (stageManualPaused) return false;
+        const candidate = Math.max(0, Number(position) || 0);
+        const previous = musicPositionSec != null ? currentMusicPosition(nowMs) : null;
+
+        // ANTI-REBOTE: un salto grande dentro de la misma canción debe repetirse alrededor
+        // del mismo punto antes de sustituir el reloj continuo.
+        if (isRelocation && previous != null && !forceJump && nowMs > musicExplicitRelocationUntil) {
+          const delta = candidate - previous;
+          const largeBackward = delta < -7.0;
+          const largeForward = delta > 18.0;
+          if (largeBackward || largeForward) {
+            const bucket = Math.round(candidate / 2);
+            if (musicRelocationVote === bucket) musicRelocationVoteCount += 1;
+            else { musicRelocationVote = bucket; musicRelocationVoteCount = 1; }
+            const requiredVotes = (score || 0) >= 0.91 ? 2 : 3;
+            if (musicRelocationVoteCount < requiredVotes) {
+              musicPositionSec = Math.max(0, previous);
+              musicPositionUpdatedAt = nowMs;
+              musicRate = 1;
+              musicFrozen = false;
+              musicTracking = true;
+              musicBadMatchCount = 0;
+              liveStartState = "tracking";
+              status.textContent = `SYNC BLOQUEADO · ${songs[currentIndex].title}. Confirmando relocalización antes de mover ${Math.round(delta)} s.`;
+              return false;
+            }
+          }
+        }
+
+        resetRelocationConsensus();
+        musicPositionSec = candidate;
         musicPositionUpdatedAt = nowMs;
         musicRate = Math.max(0.85, Math.min(1.15, rate || 1));
         musicConfidence = score || musicConfidence;
@@ -2718,6 +2772,7 @@ svg {
         }
 
         status.textContent = `${isRelocation ? "REUBICADO" : "SYNC REAL"} · ${songs[currentIndex].title} · ${formatMusicTime(currentMusicPosition(nowMs))}.`;
+        return true;
       }
 
       function enterMusicRelocation(nowMs, reason = "buscando nueva posición") {
@@ -2734,6 +2789,7 @@ svg {
         musicLastCaptureAt = 0;
         musicLastLocateAt = 0;
         musicRelocationReason = reason;
+        resetRelocationConsensus();
         liveStartState = "relocalizing";
         status.textContent = `RELOCALIZANDO · ${songs[currentIndex].title} · ${reason}.`;
       }
@@ -3145,6 +3201,8 @@ svg {
         musicLastAppliedLineIndex = -2;
         resetLyricStabilityState(1800);
         resetAutoSongScan();
+        resetRelocationConsensus();
+        musicExplicitRelocationUntil = 0;
         musicUnlocatedActiveSince = null;
         musicReferenceLineTimeline = null;
         musicTimeWarpAnchors = null;
@@ -3419,6 +3477,7 @@ svg {
         const resumeThreshold = Math.max(0.010, Math.min(0.028, musicActiveRmsEma * 0.48));
         const looksQuiet = rms < quietThreshold && energy < 0.035;
         const looksActive = rms > resumeThreshold || energy > 0.050;
+        const setReferenceCompatible = referenceMatchesSetVersion(songs[currentIndex]?.number, musicReference);
 
         // PAUSA REAL: congela el tiempo y limpia la ventana para que al volver pueda saltar
         // libremente a 0:00 o a cualquier otro punto.
@@ -3473,17 +3532,37 @@ svg {
           musicUnlocatedActiveSince = null;
         }
 
-        // Si la banda cambió de canción y el operador no tocó el selector, explora las 48
-        // referencias en pequeñas tandas para no congelar el teléfono.
-        if (!musicTracking && looksActive && musicQueryFrames.length >= 24 &&
-            ["locating", "relocalizing"].includes(liveStartState)) {
+        // Si la huella incrustada pertenece a OTRA grabación del set, nunca se usa para
+        // corregir posición. Caso confirmado: BILLIE JEAN = Weezer; la huella heredada era MJ.
+        // Mantiene reloj estable + timing de letra y deja activo el detector de cambio de canción.
+        if (!setReferenceCompatible && looksActive) {
+          if (!musicTracking && musicUnlocatedActiveSince != null) {
+            const elapsed = Math.max(0, (nowMs - musicUnlocatedActiveSince) / 1000);
+            if (elapsed >= 0.6) {
+              lockMusicPosition(elapsed, 1, 0, nowMs, true, true);
+              status.textContent = `SYNC CONTINUO · ${songs[currentIndex].title} · versión del set protegida; reloj estable ${formatMusicTime(elapsed)}.`;
+            }
+          } else if (musicTracking) {
+            musicBadMatchCount = 0;
+          }
+        }
+
+        // Detector global: sigue vigilando la biblioteca cuando la referencia actual empieza
+        // a fallar, aun antes de declarar perdida la canción.
+        const shouldScanLibrary = looksActive && musicQueryFrames.length >= 24 && (
+          !musicTracking ||
+          ["locating", "relocalizing"].includes(liveStartState) ||
+          musicBadMatchCount >= 2 ||
+          (musicLastGoodMatchAt && nowMs - musicLastGoodMatchAt > 3200)
+        );
+        if (shouldScanLibrary) {
           const songMatch = scanOtherSongsForCurrentAudio(nowMs);
           if (songMatch && songMatch.songIndex !== currentIndex) {
             if (autoSwitchToDetectedSong(songMatch, nowMs)) return true;
           }
         }
 
-        if (musicQueryFrames.length >= 32 && nowMs - musicLastLocateAt >= 900) {
+        if (setReferenceCompatible && musicQueryFrames.length >= 32 && nowMs - musicLastLocateAt >= 900) {
           musicLastLocateAt = nowMs;
           const forceGlobal = !musicTracking || musicFrozen || liveStartState === "locating" || liveStartState === "relocalizing";
           const result = locateMusicReference(nowMs, forceGlobal);
@@ -3933,6 +4012,8 @@ svg {
         musicLastAppliedLineIndex = -2;
         resetLyricStabilityState(0);
         resetAutoSongScan();
+        resetRelocationConsensus();
+        musicExplicitRelocationUntil = 0;
         musicUnlocatedActiveSince = null;
         if (livePositionLabel) livePositionLabel.textContent = "POS —:—";
         if (liveConfidenceLabel) {
@@ -4315,6 +4396,8 @@ svg {
           }
 
           stageManualPaused = false;
+          musicExplicitRelocationUntil = nowMs + 7000;
+          resetRelocationConsensus();
           musicFrozen = true;
           musicTracking = false;
           musicRate = 0;
