@@ -1811,6 +1811,10 @@ svg {
       // Después de ese snap, la letra avanza estrictamente en continuidad.
       let musicVisualSnapPending = false;
       let musicVisualLastChangeAt = 0;
+      // Reloj visual independiente: una vez localizada la canción, la letra avanza
+      // por tiempo continuo y no por nuevas decisiones absolutas del matcher.
+      let musicVisualClockSec = null;
+      let musicVisualClockUpdatedAt = 0;
       let musicManualGlobalSearchUntil = 0;
       let musicAtEndAwaitingNext = false;
 
@@ -2554,6 +2558,8 @@ svg {
         musicAllowBackwardUntil = performance.now() + Math.max(0, allowBackwardMs);
         musicVisualSnapPending = Boolean(allowVisualSnap);
         musicVisualLastChangeAt = 0;
+        musicVisualClockSec = null;
+        musicVisualClockUpdatedAt = 0;
       }
 
       function resetAutoSongScan() {
@@ -3528,99 +3534,63 @@ svg {
       function applyMusicPositionToLyrics(positionSec) {
         if (!lyricLines.length || !musicLineTimeline || !musicLineTimeline.length) return;
         const nowMs = performance.now();
-        const lyricClock = mapReferenceTimeToLyricTime(positionSec);
-        let mappedIndex = lineIndexForMusicTime(lyricClock);
+        const detectedLyricClock = mapReferenceTimeToLyricTime(positionSec);
+        let detectedIndex = lineIndexForMusicTime(detectedLyricClock);
 
-        if (mappedIndex < 0) {
-          if (musicLastAppliedLineIndex >= 0 && musicTracking) return;
-          if (musicLastAppliedLineIndex !== -1) {
-            focusLineIndex(0, false);
-            if (activeLine) activeLine.classList.remove("is-active");
-            if (activeSection) activeSection.classList.remove("is-active-section");
-            activeLine = null;
-            activeSection = null;
-            nowLabel.textContent = "INTRO / PREVIO";
-            upNextLabel.textContent = songs[currentIndex].sections[0]?.label || "PRIMERA ENTRADA";
-            musicLastAppliedLineIndex = -1;
-          }
-          musicLastMappedLyricClock = lyricClock;
+        if (detectedIndex < 0 && musicLastAppliedLineIndex < 0) {
+          musicLastMappedLyricClock = detectedLyricClock;
           return;
         }
 
-        mappedIndex = Math.max(0, Math.min(lyricLines.length - 1, mappedIndex + musicLineBias));
+        detectedIndex = Math.max(0, Math.min(lyricLines.length - 1, detectedIndex + musicLineBias));
         let previous = musicLastAppliedLineIndex;
 
-        // Sólo una relocalización explícita/cambio confirmado puede colocar la vista
-        // directamente en cualquier punto. Después, la letra avanza SIEMPRE secuencialmente.
-        if (musicVisualSnapPending || previous < 0) {
+        // ACQUIRE / RELOCALIZACIÓN: una única colocación absoluta confirmada.
+        if (musicVisualSnapPending || previous < 0 || musicVisualClockSec == null) {
+          const snapIndex = Math.max(0, detectedIndex);
           musicVisualSnapPending = false;
-          musicLastAppliedLineIndex = mappedIndex;
+          musicLastAppliedLineIndex = snapIndex;
           musicLineCandidateIndex = null;
           musicLineCandidateSince = 0;
           musicVisualLastChangeAt = nowMs;
-          focusLineIndex(mappedIndex, false);
-          musicLastMappedLyricClock = lyricClock;
+          // Ancla el reloj visual a la posición detectada sólo una vez. Desde aquí
+          // el matcher deja de decidir qué párrafo mostrar.
+          musicVisualClockSec = Math.max(0, detectedLyricClock);
+          musicVisualClockUpdatedAt = nowMs;
+          focusLineIndex(snapIndex, false);
+          musicLastMappedLyricClock = detectedLyricClock;
           return;
         }
 
-        // Nunca retroceder automáticamente durante reproducción continua.
-        // Si el usuario necesita volver, usa ◀ 1 LÍNEA o BUSCAR.
-        if (mappedIndex < previous) {
-          musicLastMappedLyricClock = Math.max(musicLastMappedLyricClock ?? lyricClock, lyricClock);
-          return;
-        }
+        // RELOJ VISUAL CONTINUO: avanza por tiempo real/tempo, sin aceptar saltos
+        // absolutos del matcher. Esto elimina tanto el salto de coro como el bloqueo.
+        const elapsed = Math.max(0, Math.min(0.5, (nowMs - musicVisualClockUpdatedAt) / 1000));
+        const visualRate = Math.max(0.90, Math.min(1.10, Number(musicRate) || 1));
+        musicVisualClockSec += elapsed * visualRate;
+        musicVisualClockUpdatedAt = nowMs;
 
-        if (mappedIndex === previous) {
+        const visualIndex = lineIndexForMusicTime(musicVisualClockSec);
+        previous = musicLastAppliedLineIndex;
+
+        // Nunca retroceder automáticamente. Una corrección hacia atrás es manual o BUSCAR.
+        if (visualIndex <= previous) {
           musicLineCandidateIndex = null;
           musicLineCandidateSince = 0;
-          musicLastMappedLyricClock = lyricClock;
+          musicLastMappedLyricClock = detectedLyricClock;
           return;
         }
 
-        // SECUENCIADOR MONOTÓNICO: la vista sólo puede pasar a la línea siguiente
-        // cuando SU PROPIO timestamp está llegando. Si el reloj aparece dos o más líneas
-        // adelantado, NO intentamos "alcanzarlo" línea por línea: eso era el salto visible
-        // de Gimme Tha Power. Se congela la letra y se espera coherencia/BUSCAR.
+        // Avance estrictamente secuencial: máximo UNA línea por ciclo.
         const nextIndex = Math.min(lyricLines.length - 1, previous + 1);
-        const nextPoint = musicLineTimeline.find((point) => Number(point.line) === nextIndex) || null;
-        const nextTime = Number(nextPoint?.t);
-        const configuredLead = Number(LYRIC_LEAD_BY_NUMBER[Number(songs[currentIndex]?.number)] || LYRIC_LEAD_DEFAULT_SEC);
-        const earlyWindow = Math.min(0.35, Math.max(0.10, configuredLead));
-        const lateWindow = 1.60;
-
-        if (!Number.isFinite(nextTime)) {
-          musicLastMappedLyricClock = lyricClock;
-          return;
-        }
-
-        const deltaToNext = lyricClock - nextTime;
-        if (deltaToNext < -earlyWindow) {
-          // Aún no toca la siguiente línea.
-          musicLineCandidateIndex = null;
-          musicLineCandidateSince = 0;
-          musicLastMappedLyricClock = lyricClock;
-          return;
-        }
-
-        if (deltaToNext > lateWindow || mappedIndex > previous + 1) {
-          // El reloj visual quedó demasiado adelante: jamás hacer catch-up automático.
-          // La música sigue corriendo por debajo, pero el texto se conserva seguro.
-          musicLineCandidateIndex = null;
-          musicLineCandidateSince = 0;
-          status.textContent = `SYNC PROTEGIDO · ${songs[currentIndex].title}. Desfase visual bloqueado; continuidad conservada. Usa ⌖ BUSCAR sólo si realmente cambió la posición.`;
-          musicLastMappedLyricClock = lyricClock;
-          return;
-        }
-
-        const requiredStableMs = 120;
+        const requiredStableMs = 70;
         if (musicLineCandidateIndex !== nextIndex) {
           musicLineCandidateIndex = nextIndex;
           musicLineCandidateSince = nowMs;
-          musicLastMappedLyricClock = lyricClock;
+          musicLastMappedLyricClock = detectedLyricClock;
           return;
         }
         if (nowMs - musicLineCandidateSince < requiredStableMs) {
-          musicLastMappedLyricClock = lyricClock;
+          musicLastMappedLyricClock = detectedLyricClock;
           return;
         }
 
@@ -3629,7 +3599,7 @@ svg {
         musicLineCandidateSince = 0;
         musicVisualLastChangeAt = nowMs;
         focusLineIndex(nextIndex, false);
-        musicLastMappedLyricClock = lyricClock;
+        musicLastMappedLyricClock = detectedLyricClock;
       }
 
       function updateMusicLabels() {
@@ -4338,11 +4308,23 @@ svg {
       function jumpLyricLine(delta) {
         if (!lyricLines.length) return;
         if (musicReference && liveSyncEnabled && musicLineTimeline && musicPositionSec != null) {
-          const baseIndex = Math.max(0, lineIndexForMusicTime(currentMusicPosition()));
-          const currentShown = Math.max(0, Math.min(lyricLines.length - 1, baseIndex + musicLineBias));
+          const currentShown = Math.max(0, Math.min(
+            lyricLines.length - 1,
+            musicLastAppliedLineIndex >= 0 ? musicLastAppliedLineIndex : lineIndexForMusicTime(currentMusicPosition())
+          ));
           const targetIndex = Math.max(0, Math.min(lyricLines.length - 1, currentShown + delta));
-          musicLineBias += targetIndex - currentShown;
+          // La corrección manual parte de lo que el músico VE, no de lo que el matcher cree.
+          // Ajustamos el sesgo respecto del mapa actual sólo para conservar esa corrección.
+          const detectedBase = Math.max(0, lineIndexForMusicTime(currentMusicPosition()));
+          musicLineBias += targetIndex - Math.max(0, Math.min(lyricLines.length - 1, detectedBase + musicLineBias));
           musicLastAppliedLineIndex = targetIndex;
+          const targetPoint = musicLineTimeline.find((point) => Number(point.line) === targetIndex);
+          if (targetPoint && Number.isFinite(Number(targetPoint.t))) {
+            musicVisualClockSec = Number(targetPoint.t);
+            musicVisualClockUpdatedAt = performance.now();
+          }
+          musicLineCandidateIndex = null;
+          musicLineCandidateSince = 0;
           focusLineIndex(targetIndex, false);
           status.textContent = `${delta > 0 ? "Avance" : "Retroceso"} manual a línea ${targetIndex + 1}. La posición musical sigue anclada en ${formatMusicTime(currentMusicPosition())}.`;
           return;
