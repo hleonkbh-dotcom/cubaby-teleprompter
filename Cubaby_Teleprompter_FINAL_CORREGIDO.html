@@ -2454,8 +2454,19 @@ svg {
         if (!musicTracking && ["locating", "relocalizing"].includes(liveStartState)) {
           const nearTies = refined.filter((item) => item.score >= best.score - 0.008);
           if (nearTies.length > 1) {
-            const earliest = nearTies.reduce((a,b) => a.candidate <= b.candidate ? a : b);
-            if (best.candidate - earliest.candidate >= 18) best = earliest;
+            // Si ya existe una posición de esta misma canción (pausa/relocalización),
+            // la continuidad manda: entre coros casi idénticos se conserva la hipótesis
+            // más cercana al reloj congelado. En una canción recién detectada, donde no
+            // existe ancla previa, se mantiene el sesgo temprano para no saltar a un coro tardío.
+            if (musicPositionSec != null && liveStartState === "relocalizing") {
+              const anchor = Math.max(0, Number(musicPositionSec) || 0);
+              best = nearTies.reduce((a,b) =>
+                Math.abs(a.candidate - anchor) <= Math.abs(b.candidate - anchor) ? a : b
+              );
+            } else {
+              const earliest = nearTies.reduce((a,b) => a.candidate <= b.candidate ? a : b);
+              if (best.candidate - earliest.candidate >= 18) best = earliest;
+            }
           }
         }
         const second = refined.find((item) => Math.abs(item.candidate - best.candidate) >= 7) || refined[1] || null;
@@ -2476,7 +2487,7 @@ svg {
         if (!Number.isFinite(estimated)) return null;
         const steps = [0.90, 1.0, 1.10];
         let best = null;
-        const radius = 14;
+        const radius = 5.0;
 
         for (const step of steps) {
           const need = Math.floor((query.length - 1) * step) + 1;
@@ -3522,9 +3533,16 @@ svg {
             return;
           }
 
-          // Fuera de una relocalización explícita, la vista nunca brinca más de una línea.
-          // El reloj puede corregirse por debajo, pero el texto alcanza la posición gradualmente.
-          if (!backward && jump > 1) index = previous + 1;
+          // PROTECCIÓN DE SECUENCIA: durante tracking normal, una posición que aparece
+          // más de una línea adelante NO se "alcanza" rápidamente. Ese comportamiento anterior
+          // podía recorrer un párrafo entero en ~1 s si el reloj había caído en otro coro.
+          // Los saltos legítimos de relocalización ya pasan por musicVisualSnapPending.
+          if (!backward && jump > 1) {
+            musicLineCandidateIndex = null;
+            musicLineCandidateSince = 0;
+            musicLastMappedLyricClock = lyricClock;
+            return;
+          }
 
           const targetJump = Math.abs(index - previous);
           const minDwellMs = 260;
@@ -3556,7 +3574,7 @@ svg {
         if (livePositionLabel) livePositionLabel.textContent = `POS ${formatMusicTime(pos)}`;
         if (liveConfidenceLabel) {
           const pct = musicConfidence ? Math.round(musicConfidence * 100) : 0;
-          liveConfidenceLabel.textContent = musicReference ? `REF ${pct || "—"}%` : "REF —";
+          liveConfidenceLabel.textContent = musicReference ? `AUDIO ${pct || "—"}%` : "AUDIO —";
           liveConfidenceLabel.classList.toggle("is-good", pct >= 78);
           liveConfidenceLabel.classList.toggle("is-mid", pct >= 62 && pct < 78);
         }
@@ -3593,42 +3611,25 @@ svg {
         const looksActive = rms > resumeThreshold || energy > 0.050;
         const setReferenceCompatible = referenceMatchesSetVersion(songs[currentIndex]?.number, musicReference);
 
-        // PAUSA REAL: congela el tiempo y limpia la ventana para que al volver pueda saltar
-        // libremente a 0:00 o a cualquier otro punto.
+        // REGLA FINAL: el silencio del micrófono NO equivale a PAUSA.
+        // Un break, una caída de dinámica o la acústica del escenario no deben congelar
+        // el reloj ni abrir una relocalización global. Mientras PLAY esté activo, el reloj
+        // continúa. La única pausa real es el botón PAUSA (stageManualPaused).
         if (musicTracking && !musicFrozen) {
           if (looksQuiet) {
             if (musicLowSignalSince == null) musicLowSignalSince = nowMs;
-            if (nowMs - musicLowSignalSince >= 850) {
-              musicPositionSec = currentMusicPosition(nowMs);
-              musicPositionUpdatedAt = nowMs;
-              musicFrozen = true;
-              musicRate = 0;
-              musicTracking = false;
-              liveStartState = "paused";
-              musicQueryFrames = [];
-              resetMusicCandidateHistory();
-              musicResumeSignalSince = null;
-              status.textContent = `PAUSA DETECTADA · ${songs[currentIndex].title}. Esperando que vuelva la música…`;
-            }
           } else {
             musicLowSignalSince = null;
           }
         }
-
-        // REANUDACIÓN después de pausa: no supone continuidad; vuelve a localizar globalmente.
         if (liveStartState === "paused") {
-          if (looksActive) {
-            if (musicResumeSignalSince == null) musicResumeSignalSince = nowMs;
-            if (nowMs - musicResumeSignalSince >= 260) {
-              enterMusicRelocation(nowMs, "música reanudada");
-              musicResumeSignalSince = null;
-            }
-          } else {
-            musicResumeSignalSince = null;
-          }
-          updateMusicLabels();
-          updateLiveDisplay();
-          return true;
+          // Compatibilidad defensiva con estados heredados: vuelve a continuidad, no relocaliza.
+          musicFrozen = false;
+          musicTracking = true;
+          musicRate = 1;
+          liveStartState = "tracking";
+          musicLowSignalSince = null;
+          musicResumeSignalSince = null;
         }
 
         if (nowMs - musicLastCaptureAt >= 170 && rms > 0.005) {
@@ -3704,18 +3705,13 @@ svg {
           const auditFix = confirmPositionAudit(auditResult, estimatedAuditPosition, nowMs);
           if (auditFix) {
             const delta = Number(auditFix.delta) || 0;
-            // La auditoría global ya NO puede saltar el reloj dentro de un track estable.
-            // Solo corrige deriva moderada y de forma gradual. Un salto grande queda como
-            // evidencia de posible coro repetido/seek y debe esperar a pérdida real del lock.
-            if (Math.abs(delta) <= 12) {
-              const softCorrection = Math.max(-1.0, Math.min(1.0, delta * 0.16));
-              musicPositionSec = Math.max(0, estimatedAuditPosition + softCorrection);
-              musicPositionUpdatedAt = nowMs;
-              musicRate = musicRate * 0.90 + (auditFix.rate || 1) * 0.10;
-              musicConfidence = Math.max(musicConfidence, auditFix.score || 0);
-              status.textContent = `SYNC ESTABLE · ${songs[currentIndex].title} · ajuste suave ${softCorrection >= 0 ? "+" : ""}${softCorrection.toFixed(1)} s.`;
-            } else {
-              status.textContent = `SYNC ESTABLE · ${songs[currentIndex].title}. Se ignoró salto global dudoso de ${Math.round(delta)} s.`;
+            // REGLA FINAL DE CONTINUIDAD: una auditoría GLOBAL de la misma canción
+            // jamás mueve el reloj mientras el track ya está siguiendo. En repertorio
+            // con coros repetidos, una trayectoria global puede ser perfectamente estable
+            // y aun así corresponder al segundo/tercer coro. Se conserva sólo como diagnóstico.
+            musicConfidence = Math.max(musicConfidence, auditFix.score || 0);
+            if (Math.abs(delta) > 4) {
+              status.textContent = `SYNC POR RELOJ · ${songs[currentIndex].title}. Coincidencia global ambigua (${delta >= 0 ? "+" : ""}${Math.round(delta)} s) ignorada para proteger continuidad.`;
             }
           }
         }
@@ -3769,14 +3765,18 @@ svg {
             resetMusicCandidateHistory();
             status.textContent = `SYNC REAL · ${songs[currentIndex].title} · ${formatMusicTime(currentMusicPosition(nowMs))}.`;
           } else {
-            musicBadMatchCount += 1;
+            musicBadMatchCount = Math.min(99, musicBadMatchCount + 1);
             if (result?.score) musicConfidence = result.score;
 
-            // Si el audio cambió de punto sin una pausa clara (seek/salto), no sigas arrastrando
-            // una posición vieja. Tras varios fallos locales se congela y se permite un salto global.
-            const badLimit = musicTimeWarpAnchors ? 9 : 5;
+            // REGLA FINAL DE ESCENARIO: perder temporalmente la huella de la MISMA canción
+            // NO autoriza una relocalización global. En coros repetidos eso era exactamente
+            // lo que mandaba Gimme Tha Power / Aviéntame a otra repetición. El reloj continuo
+            // sigue avanzando; el detector global de 48 canciones permanece activo en paralelo
+            // y sí puede cambiar de canción cuando exista consenso real.
+            const badLimit = musicTimeWarpAnchors ? 9 : 6;
             if (musicBadMatchCount >= badLimit) {
-              enterMusicRelocation(nowMs, "se detectó un salto o pérdida de referencia");
+              musicBadMatchCount = badLimit;
+              status.textContent = `SYNC POR RELOJ · ${songs[currentIndex].title}. Referencia local ambigua; se conserva continuidad sin saltar de coro.`;
             }
           }
         }
@@ -4109,9 +4109,13 @@ svg {
             musicReference = musicReference || musicRefForSong(songs[currentIndex].number);
             musicPositionSec = Math.max(0, Number(resumeSnapshot.position) || 0);
             musicPositionUpdatedAt = performance.now();
-            musicTracking = false;
-            musicFrozen = true;
-            musicRate = 0;
+            // PAUSA/PLAY conserva el reloj. No se abre una relocalización global de la misma
+            // canción, porque un coro repetido podría sustituir una posición que ya era válida.
+            // Si durante la pausa la banda cambió de canción, el detector global de 48 referencias
+            // lo resolverá de forma independiente.
+            musicTracking = true;
+            musicFrozen = false;
+            musicRate = 1;
             musicQueryFrames = [];
             musicLastCaptureAt = 0;
             musicLastLocateAt = 0;
@@ -4119,12 +4123,13 @@ svg {
             resetMusicCandidateHistory();
             resetRelocationConsensus();
             resetPositionAudit();
-            musicExplicitRelocationUntil = performance.now() + 8000;
-            liveStartState = "relocalizing";
+            musicExplicitRelocationUntil = 0;
+            liveStartState = "tracking";
+            resetLyricStabilityState(0, false);
             ensureMusicLineTimeline(songs[currentIndex], musicReference).catch(() => {});
             playButton.textContent = "PAUSA";
             playButton.setAttribute("aria-pressed", "true");
-            status.textContent = `PLAY · Sync Real encendido · ${songs[currentIndex].title}. Relocalizando sin perder la posición congelada.`;
+            status.textContent = `PLAY · Sync Real encendido · ${songs[currentIndex].title}. Continuando desde ${formatMusicTime(musicPositionSec)}; reconocimiento sólo corrige alrededor del reloj.`;
           } else {
             armLiveForCurrentSong(false);
             playButton.textContent = "PAUSA";
@@ -4202,7 +4207,7 @@ svg {
         musicUnlocatedActiveSince = null;
         if (livePositionLabel) livePositionLabel.textContent = "POS —:—";
         if (liveConfidenceLabel) {
-          liveConfidenceLabel.textContent = "REF —";
+          liveConfidenceLabel.textContent = "AUDIO —";
           liveConfidenceLabel.classList.remove("is-good", "is-mid");
         }
         activeCalibration = null;
