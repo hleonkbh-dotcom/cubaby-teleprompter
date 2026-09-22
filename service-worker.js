@@ -1,23 +1,19 @@
-const CACHE = "cubaby-v2.6-easy-1";
-const ASSETS = [
-  "./",
-  "./index.html",
-  "./manifest.webmanifest",
-  "./mic-test.html"
-];
 self.addEventListener("install", event => {
-  event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(ASSETS)));
   self.skipWaiting();
 });
+
 self.addEventListener("activate", event => {
-  event.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))));
-  self.clients.claim();
+  event.waitUntil((async () => {
+    const keys = await caches.keys();
+    await Promise.all(keys.filter(k => k.startsWith("cubaby-")).map(k => caches.delete(k)));
+    await self.registration.unregister();
+    const clients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+    for (const client of clients) {
+      client.postMessage({ type: "CUBABY_CACHE_CLEARED" });
+    }
+  })());
 });
-self.addEventListener("fetch", event => {
-  if (event.request.method !== "GET") return;
-  event.respondWith(caches.match(event.request).then(hit => hit || fetch(event.request).then(response => {
-    const copy = response.clone();
-    caches.open(CACHE).then(cache => cache.put(event.request, copy));
-    return response;
-  }).catch(() => caches.match("./index.html"))));
+
+self.addEventListener("fetch", () => {
+  // No interceptamos peticiones. El navegador obtiene siempre la versión real del servidor.
 });
