@@ -2011,7 +2011,7 @@ svg {
               setActiveBanner.style.background = "#effaf2";
               setActiveBanner.style.borderColor = "#bfe4c8";
               setActiveMain.textContent = `🟢 SET EN USO · ${set.name} · Canción ${pos + 1} de ${set.order.length}`;
-              setActiveNext.textContent = `Siguiente: ${next[0] || "FIN DEL SET"} · cambio manual seguro`;
+              setActiveNext.textContent = `Siguiente: ${next[0] || "FIN DEL SET"}`;
             } else {
               setActiveBanner.style.background = "#fff7ed";
               setActiveBanner.style.borderColor = "#fdba74";
@@ -2285,6 +2285,13 @@ svg {
       // es sólo una semilla. La letra no se mueve hasta refinar localmente esa semilla.
       let musicSeedRefineSince = 0;
       let musicSeedCandidateSec = null;
+      // SET 3.0: transición actual -> siguiente con evidencia sostenida.
+      // Nunca compara el set completo durante LOCK y no depende del POS para declarar fin.
+      let setTransitionCandidateNumber = null;
+      let setTransitionVotes = 0;
+      let setTransitionSince = 0;
+      let setTransitionLastCheckAt = 0;
+      let setTransitionCooldownUntil = 0;
 
       // Calibración avanzada (oculta del flujo principal).
       let calibrationMode = false;
@@ -2327,7 +2334,7 @@ svg {
       const ARTIST_BY_NUMBER = {"1":"A Flock of Seagulls","2":"Judas Priest","3":"Babasónicos","4":"Zoé","5":"Jaguares","6":"La Lupita","7":"The Cure","8":"Coldplay","9":"Pulp","10":"Talking Heads","11":"Soda Stereo","12":"Café Tacvba","13":"Víctimas del Doctor Cerebro","14":"La Ley","15":"Fobia","16":"Caifanes","17":"Los Concorde","18":"U2","19":"Weezer","20":"Tears for Fears","21":"Erasure","22":"Muse","23":"Linkin Park","24":"Enjambre","25":"Molotov","26":"DLD","27":"La Castañeda","28":"Cream","29":"Deep Purple","30":"ZZ Top","31":"Midnight Oil","32":"Caifanes","33":"La Lupita","34":"TOTO","35":"The Cure","36":"Weezer","37":"Los Enanitos Verdes","38":"Molotov","39":"Black Sabbath","40":"Billy Idol","41":"Hombres G","42":"Simple Minds","43":"Rage Against The Machine","44":"Héroes del Silencio","45":"Los Fabulosos Cadillacs","46":"Los Caligaris / Jorge Serrano","47":"Pearl Jam","48":"Rostros Ocultos"};
       const TARGET_TRACK_META = {"1":{"artist":"A Flock Of Seagulls","title":"I Ran (So Far Away)","duration":304.28,"version":"Set Base 2026 · álbum A Flock of Seagulls"},"3":{"artist":"Babasónicos","title":"Irresponsables","duration":156.197,"version":"Set Base 2026"},"4":{"artist":"Zoé","title":"Veneno","duration":266.866,"version":"Set Base 2026"},"10":{"artist":"Talking Heads","title":"Psycho Killer","duration":260.506,"version":"Set Base 2026"},"13":{"artist":"Víctimas Del Doctor Cerebro","title":"El Esqueleto","duration":221.64,"version":"Set Base 2026"},"16":{"artist":"Caifanes","title":"Aviéntame","duration":273.44,"version":"Set Base 2026"},"17":{"artist":"Los Concorde","title":"Rompecabezas","duration":232.373,"version":"Set Base 2026"},"19":{"artist":"Weezer","title":"Billie Jean","duration":294.12,"version":"Weezer (Teal Album)"},"23":{"artist":"Linkin Park","title":"In the End","duration":216.88,"version":"Set Base 2026"},"26":{"artist":"DLD","title":"Mi Vida","duration":282.76,"version":"José José, Un Tributo"},"28":{"artist":"Cream","title":"White Room","duration":298.333,"version":"Wheels Of Fire"},"29":{"artist":"Deep Purple","title":"Smoke On The Water","duration":340.742,"version":"Remastered 2012 · Machine Head"},"30":{"artist":"ZZ Top","title":"La Grange","duration":230.706,"version":"Set Base 2026"},"31":{"artist":"Midnight Oil","title":"Beds Are Burning","duration":255.68,"version":"Remastered · Diesel And Dust"},"32":{"artist":"Caifanes","title":"Viento","duration":236.333,"version":"Set Base 2026"},"33":{"artist":"La Lupita","title":"Ja, Ja, Ja","duration":160.893,"version":"Tres-D"},"34":{"artist":"TOTO","title":"Hold the Line","duration":235.552,"version":"Toto"},"35":{"artist":"The Cure","title":"Friday I'm In Love","duration":215.16,"version":"Wish"},"36":{"artist":"Weezer","title":"Hash Pipe","duration":186.533,"version":"Weezer"},"37":{"artist":"Los Enanitos Verdes","title":"Guitarras Blancas","duration":266.826,"version":"Set Base 2026"},"38":{"artist":"Molotov","title":"Gimme Tha Power","duration":250.293,"version":"¿Dónde Jugarán Las Niñas?"},"39":{"artist":"Black Sabbath","title":"N.I.B.","duration":366.173,"version":"2009 Remaster"},"40":{"artist":"Billy Idol","title":"Rebel Yell","duration":288.533,"version":"Rebel Yell"},"41":{"artist":"Hombres G","title":"Devuélveme a mi chica","duration":194.08,"version":"Set Base 2026"},"42":{"artist":"Simple Minds","title":"Don't You (Forget About Me)","duration":263.04,"version":"Set Base 2026"},"43":{"artist":"Rage Against The Machine","title":"Killing In The Name","duration":313.573,"version":"Set Base 2026"},"44":{"artist":"Heroes Del Silencio","title":"Entre dos tierras","duration":368.32,"version":"Senderos De Traición"},"45":{"artist":"Los Fabulosos Cadillacs","title":"El Satánico Dr. Cadillac","duration":256.773,"version":"Versión '93 · Remasterizado 2008 · Vasos Vacíos"},"46":{"artist":"Los Caligaris","title":"Quereme Así","duration":262.066,"version":"con Jorge Serrano · Chanchos Amigos"},"47":{"artist":"Pearl Jam","title":"Yellow Ledbetter","duration":303.586,"version":"Jeremy"},"48":{"artist":"Rostros Ocultos","title":"El Final","duration":230.058,"version":"Encerrados"}};
       const TARGET_TIMING_CACHE_KEY = "cubaby-target-timing-v2";
-      const LYRIC_LEAD_DEFAULT_SEC = 0.22;
+      const LYRIC_LEAD_DEFAULT_SEC = 0.10;
       const LYRIC_LEAD_BY_NUMBER = {16:0.22,19:0.28,38:0.30};
 
 
@@ -3040,6 +3047,79 @@ svg {
         autoSongWinnerVotes = 0;
       }
 
+      function resetSetTransitionState(cooldownMs = 0) {
+        setTransitionCandidateNumber = null;
+        setTransitionVotes = 0;
+        setTransitionSince = 0;
+        setTransitionLastCheckAt = 0;
+        if (cooldownMs > 0) setTransitionCooldownUntil = performance.now() + cooldownMs;
+      }
+
+      function scanExpectedSetTransition(nowMs) {
+        if (detectionMode !== "set" || !musicTracking || musicFrozen) return null;
+        if (nowMs < setTransitionCooldownUntil || nowMs - setTransitionLastCheckAt < 420) return null;
+        if (musicQueryFrames.length < 24) return null;
+        setTransitionLastCheckAt = nowMs;
+
+        const nextNumber = Number(predictedNextSongNumbers(1)[0] || 0);
+        if (!nextNumber) return null;
+        const nextIndex = songs.findIndex(s => Number(s.number) === nextNumber);
+        if (nextIndex < 0 || nextIndex === currentIndex) return null;
+        const nextRef = musicRefForSong(nextNumber);
+        if (!nextRef || !musicReference) return null;
+
+        const query = musicQueryFrames.slice(-28);
+        const currentMatch = quickCrossSongCandidate(query, musicReference);
+        const nextMatch = quickCrossSongCandidate(query, nextRef);
+        if (!nextMatch) { resetSetTransitionState(); return null; }
+
+        const currentScore = Number(currentMatch?.score || 0);
+        const nextScore = Number(nextMatch.score || 0);
+        const margin = nextScore - currentScore;
+        const position = Number(currentMusicPosition(nowMs) || 0);
+
+        // Durante los primeros segundos una intro armónicamente parecida nunca puede
+        // cambiar de canción. Al final declarado por el reloj se relaja esta protección.
+        if (!musicAtEndAwaitingNext && position < 18) { resetSetTransitionState(); return null; }
+
+        // La siguiente debe ganar de forma clara y sostenida. El umbral absoluto evita
+        // cambios por ruido; el margen evita cambiar cuando ambas referencias son parecidas.
+        const strongNext = nextScore >= 0.82 && (margin >= 0.018 || (nextScore >= 0.91 && currentScore <= 0.86));
+        if (!strongNext) {
+          resetSetTransitionState();
+          if (margin < -0.010) syncDiag("SET_CURRENT_CONFIRMED", {currentScore, nextScore, margin, position});
+          return null;
+        }
+
+        if (setTransitionCandidateNumber === nextNumber) {
+          setTransitionVotes += 1;
+        } else {
+          setTransitionCandidateNumber = nextNumber;
+          setTransitionVotes = 1;
+          setTransitionSince = nowMs;
+        }
+
+        syncDiag("SET_NEXT_CANDIDATE", {nextNumber, currentScore, nextScore, margin, votes:setTransitionVotes, position});
+        const sustainedMs = nowMs - setTransitionSince;
+        const votesNeeded = nextScore >= 0.92 && margin >= 0.030 ? 4 : 5;
+        if (setTransitionVotes < votesNeeded || sustainedMs < 1500) return null;
+
+        const match = {
+          songIndex: nextIndex,
+          songNumber: nextNumber,
+          title: songs[nextIndex].title,
+          score: nextScore,
+          currentScore,
+          margin,
+          candidate: Number.isFinite(nextMatch.candidate) ? nextMatch.candidate : 0,
+          rate: nextMatch.rate || 1,
+          versionCompatible: referenceMatchesSetVersion(nextNumber, nextRef),
+          setTransitionConfirmed: true
+        };
+        resetSetTransitionState(9000);
+        return match;
+      }
+
       function resetRelocationConsensus() {
         musicRelocationVote = null;
         musicRelocationVoteCount = 0;
@@ -3229,10 +3309,15 @@ svg {
 
         const query = musicQueryFrames.slice(-28);
 
-        // MODO SET ESTABLE: sin cambios automáticos de canción.
-        // La prioridad es NO abandonar nunca la canción actual por una falsa coincidencia.
-        // La navegación del set se hace exclusivamente con ANTERIOR / SIGUIENTE.
+        // MODO SET ESTRICTO: jamás buscar otras canciones mientras la actual siga activa.
+        // Sólo después de FIN se permite confirmar UNA canción: la siguiente exacta del set.
         if (detectionMode === "set") {
+          if (!musicAtEndAwaitingNext) return null;
+          const priorityMatch = scanSetPriorityCandidates(query, nowMs);
+          if (priorityMatch) {
+            resetAutoSongScan();
+            return priorityMatch;
+          }
           return null;
         }
 
@@ -3309,13 +3394,9 @@ svg {
       }
 
       function autoSwitchToDetectedSong(match, nowMs) {
-        if (detectionMode === "set") {
-          syncDiag("BLOCKED_SET_AUTOSWITCH", {candidate:Number(match?.songNumber)||null});
-          return false;
-        }
         if (!match || match.songIndex === currentIndex) return false;
         if (detectionMode === "set") {
-          if (!musicAtEndAwaitingNext) {
+          if (!musicAtEndAwaitingNext && !match.setTransitionConfirmed) {
             syncDiag("BLOCKED_SET_SWITCH", {reason:"current-song-still-active", candidate:Number(match.songNumber)||null});
             return false;
           }
@@ -3337,6 +3418,7 @@ svg {
         musicAtEndAwaitingNext = false;
         musicManualGlobalSearchUntil = 0;
         resetAutoSongScan();
+        resetSetTransitionState(9000);
         resetRelocationConsensus();
         resetPositionAudit();
 
@@ -4239,6 +4321,14 @@ svg {
           }
         }
 
+        // SET: mientras la canción actual está bloqueada, comparar exclusivamente
+        // ACTUAL vs SIGUIENTE esperada. Si la siguiente domina de forma sostenida,
+        // cambiar una sola vez sin esperar a que POS alcance una duración teórica.
+        if (detectionMode === "set" && looksActive && musicTracking && !musicFrozen) {
+          const setTransition = scanExpectedSetTransition(nowMs);
+          if (setTransition && autoSwitchToDetectedSong(setTransition, nowMs)) return true;
+        }
+
         if (looksQuiet && !musicTracking) musicSawQuietBeforeStart = true;
         if (looksActive) {
           if (musicUnlocatedActiveSince == null) {
@@ -4388,13 +4478,28 @@ svg {
               }
             }
           } else if (result?.mode === "local" && result.score >= (result.coverMode ? 0.76 : 0.82)) {
-            // CORE 2.0: una vez LOCKED, el matcher NO mueve el reloj.
-            // Sólo actualiza confianza/diagnóstico. Esto elimina deriva acumulada y saltos
-            // entre coros repetidos. Una nueva posición absoluta requiere BUSCAR o cambio de canción.
+            // TRACKER SECUENCIAL: LOCK conserva la trayectoria. El matcher sólo puede
+            // hacer microcorrecciones alrededor del reloj previsto; jamás elegir otra
+            // repetición remota de un coro/riff aunque su score sea mayor.
+            const predicted = Number(currentMusicPosition(nowMs) || 0);
+            const candidate = Number(mapReferenceTimeToLyricTime(Number(result.candidate)));
+            const delta = candidate - predicted;
             musicConfidence = result.score;
             musicLastGoodMatchAt = nowMs;
             musicBadMatchCount = 0;
             resetMusicCandidateHistory();
+
+            if (Number.isFinite(candidate) && Math.abs(delta) <= 2.8) {
+              const correction = Math.max(-0.32, Math.min(0.32, delta * 0.22));
+              if (Math.abs(correction) >= 0.03) {
+                musicPositionSec = Math.max(0, predicted + correction);
+                musicPositionUpdatedAt = nowMs;
+                musicTransportLastTickAt = nowMs;
+                syncDiag("LOCAL_MICRO_CORRECTION", {predicted, candidate, delta, correction, score:result.score});
+              }
+            } else if (Number.isFinite(candidate)) {
+              syncDiag("ANOMALY_REMOTE_REPEAT_REJECTED", {predicted, candidate, delta, score:result.score});
+            }
             status.textContent = `LOCK · ${songs[currentIndex].title} · ${formatMusicTime(currentMusicPosition(nowMs))}.`;
           } else {
             musicBadMatchCount = Math.min(99, musicBadMatchCount + 1);
@@ -4983,7 +5088,7 @@ svg {
           return;
         }
         const nowMs = performance.now();
-        musicManualGlobalSearchUntil = nowMs + 9000;
+        musicManualGlobalSearchUntil = detectionMode === "set" ? 0 : nowMs + 9000;
         musicExplicitRelocationUntil = nowMs + 9000;
         musicAtEndAwaitingNext = false;
         if (musicPositionSec != null) {
@@ -5004,9 +5109,12 @@ svg {
         resetRelocationConsensus();
         resetPositionAudit();
         resetAutoSongScan();
+        resetSetTransitionState();
         resetLyricStabilityState(0, true);
         liveStartState = "relocalizing";
-        status.textContent = `⌖ BUSCAR · escuchando las 48 canciones y relocalizando ${songs[currentIndex].title}.`;
+        status.textContent = detectionMode === "set"
+          ? `⌖ BUSCAR · relocalizando sólo ${songs[currentIndex].title}; el SET no cambia de canción durante BUSCAR.`
+          : `⌖ BUSCAR · escuchando las 48 canciones y relocalizando ${songs[currentIndex].title}.`;
       }
 
       function renderSong(index, scroll = true) {
@@ -5208,6 +5316,8 @@ svg {
         resetMusicCandidateHistory();
         resetRelocationConsensus();
         resetPositionAudit();
+        resetAutoSongScan();
+        resetSetTransitionState();
         resetLyricStabilityState(7000);
         musicLineBias = 0;
         musicLastAppliedLineIndex = -2;
@@ -5260,8 +5370,7 @@ svg {
               // En Sync Vivo NO detener el motor al final: Spotify/la banda puede encadenar
               // la siguiente canción. Congelamos visualmente en la última línea y seguimos
               // escuchando las 48 referencias hasta confirmar el cambio.
-              musicAtEndAwaitingNext = detectionMode !== "set";
-              // En SET estable nunca se arma cambio automático; el usuario usa SIGUIENTE.
+              musicAtEndAwaitingNext = true;
               // Congela el reloj de la pista terminada. Antes seguía creciendo (p.ej. 4:54
               // en Gimme), lo que contaminaba estado/visual mientras esperaba la siguiente.
               musicPositionSec = Math.max(0, position);
@@ -5418,61 +5527,10 @@ svg {
 
       function changeSong(delta) {
         const oldNumber = Number(songs[currentIndex]?.number || 0);
-        if (liveSyncEnabled) pauseLiveSyncKeepPosition(false);
         stop("Cambio de canción.");
-
-        let targetIndex = currentIndex + delta;
-        if (detectionMode === "set") {
-          const set = activeRehearsalSet();
-          const order = Array.isArray(set?.order) ? set.order.map(Number).filter(Boolean) : [];
-          const pos = order.findIndex(n => n === oldNumber);
-          if (pos >= 0) {
-            const nextPos = pos + delta;
-            if (nextPos < 0 || nextPos >= order.length) {
-              status.textContent = nextPos < 0 ? "INICIO DEL SET" : "FIN DEL SET";
-              updateSetUi();
-              return;
-            }
-            const targetNumber = Number(order[nextPos]);
-            const idx = songs.findIndex(song => Number(song.number) === targetNumber);
-            if (idx >= 0) targetIndex = idx;
-          }
-        }
-
-        musicForceStartFromZero = true;
-        renderSong(targetIndex, false);
-
-        const nowMs = performance.now();
-        musicPositionSec = 0;
-        musicPositionUpdatedAt = nowMs;
-        musicTransportLastTickAt = nowMs;
-        musicRate = 0;
-        musicTracking = false;
-        musicFrozen = true;
-        musicAudioGateOpen = false;
-        musicAtEndAwaitingNext = false;
-        musicManualGlobalSearchUntil = 0;
-        stageManualPaused = false;
-        musicPausedSnapshot = null;
-        liveStartState = "idle";
-        resetAutoSongScan();
-        resetMusicCandidateHistory();
-        resetRelocationConsensus();
-        resetPositionAudit();
-        resetLyricStabilityState(7000);
-        musicLineBias = 0;
-        musicLastAppliedLineIndex = -2;
-        if (lyricLines.length) {
-          focusLineIndex(0, false);
-          virtualPosition = lineDocumentCenter(lyricLines[0]);
-        }
+        musicForceStartFromZero = false;
+        renderSong(currentIndex + delta);
         registerConfirmedSongChange(oldNumber, Number(songs[currentIndex]?.number || 0));
-        updateMusicLabels();
-        updateLiveDisplay();
-        updateSetUi();
-        status.textContent = detectionMode === "set"
-          ? `SET · ${activeRehearsalSet()?.name || "set"} · ${songs[currentIndex].title} en 0:00 · pulsa PLAY.`
-          : `Canción ${songs[currentIndex].title} en 0:00 · pulsa PLAY.`;
       }
 
 
@@ -5920,7 +5978,7 @@ svg {
         prioritySongWinnerNumber=null; prioritySongWinnerVotes=0;
         updateSetUi();
         status.textContent = detectionMode === "set"
-          ? "MODO SET ESTABLE · cambio automático desactivado. Usa SIGUIENTE / ANTERIOR para cambiar de canción sin falsas detecciones."
+          ? "MODO SET · primero confirmaré la siguiente canción probable; si no coincide, buscaré entre las 48."
           : "MODO LIBRE · detector global de 48 canciones.";
       });
       setSelect?.addEventListener("change", () => {
@@ -6325,8 +6383,21 @@ svg {
 
 <script>
 (() => {
-  if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
-    window.addEventListener('load', () => navigator.serviceWorker.register('./service-worker.js').catch(() => {}));
+  // CUBABY CLEAN BASELINE: no service worker during development/validation.
+  // Historical builds used a cache-first worker that could serve stale HTML and confuse tests.
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', async () => {
+      try {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(regs.map(reg => reg.unregister()));
+      } catch (_) {}
+      try {
+        if ('caches' in window) {
+          const keys = await caches.keys();
+          await Promise.all(keys.filter(k => /^cubaby-/i.test(k)).map(k => caches.delete(k)));
+        }
+      } catch (_) {}
+    }, { once: true });
   }
 })();
 </script>
