@@ -2011,7 +2011,7 @@ svg {
               setActiveBanner.style.background = "#effaf2";
               setActiveBanner.style.borderColor = "#bfe4c8";
               setActiveMain.textContent = `🟢 SET EN USO · ${set.name} · Canción ${pos + 1} de ${set.order.length}`;
-              setActiveNext.textContent = `Siguiente: ${next[0] || "FIN DEL SET"} · cambio manual seguro`;
+              setActiveNext.textContent = `Siguiente: ${next[0] || "FIN DEL SET"}`;
             } else {
               setActiveBanner.style.background = "#fff7ed";
               setActiveBanner.style.borderColor = "#fdba74";
@@ -3229,10 +3229,15 @@ svg {
 
         const query = musicQueryFrames.slice(-28);
 
-        // MODO SET ESTABLE: sin cambios automáticos de canción.
-        // La prioridad es NO abandonar nunca la canción actual por una falsa coincidencia.
-        // La navegación del set se hace exclusivamente con ANTERIOR / SIGUIENTE.
+        // MODO SET ESTRICTO: jamás buscar otras canciones mientras la actual siga activa.
+        // Sólo después de FIN se permite confirmar UNA canción: la siguiente exacta del set.
         if (detectionMode === "set") {
+          if (!musicAtEndAwaitingNext) return null;
+          const priorityMatch = scanSetPriorityCandidates(query, nowMs);
+          if (priorityMatch) {
+            resetAutoSongScan();
+            return priorityMatch;
+          }
           return null;
         }
 
@@ -3309,10 +3314,6 @@ svg {
       }
 
       function autoSwitchToDetectedSong(match, nowMs) {
-        if (detectionMode === "set") {
-          syncDiag("BLOCKED_SET_AUTOSWITCH", {candidate:Number(match?.songNumber)||null});
-          return false;
-        }
         if (!match || match.songIndex === currentIndex) return false;
         if (detectionMode === "set") {
           if (!musicAtEndAwaitingNext) {
@@ -5260,8 +5261,7 @@ svg {
               // En Sync Vivo NO detener el motor al final: Spotify/la banda puede encadenar
               // la siguiente canción. Congelamos visualmente en la última línea y seguimos
               // escuchando las 48 referencias hasta confirmar el cambio.
-              musicAtEndAwaitingNext = detectionMode !== "set";
-              // En SET estable nunca se arma cambio automático; el usuario usa SIGUIENTE.
+              musicAtEndAwaitingNext = true;
               // Congela el reloj de la pista terminada. Antes seguía creciendo (p.ej. 4:54
               // en Gimme), lo que contaminaba estado/visual mientras esperaba la siguiente.
               musicPositionSec = Math.max(0, position);
@@ -5418,61 +5418,10 @@ svg {
 
       function changeSong(delta) {
         const oldNumber = Number(songs[currentIndex]?.number || 0);
-        if (liveSyncEnabled) pauseLiveSyncKeepPosition(false);
         stop("Cambio de canción.");
-
-        let targetIndex = currentIndex + delta;
-        if (detectionMode === "set") {
-          const set = activeRehearsalSet();
-          const order = Array.isArray(set?.order) ? set.order.map(Number).filter(Boolean) : [];
-          const pos = order.findIndex(n => n === oldNumber);
-          if (pos >= 0) {
-            const nextPos = pos + delta;
-            if (nextPos < 0 || nextPos >= order.length) {
-              status.textContent = nextPos < 0 ? "INICIO DEL SET" : "FIN DEL SET";
-              updateSetUi();
-              return;
-            }
-            const targetNumber = Number(order[nextPos]);
-            const idx = songs.findIndex(song => Number(song.number) === targetNumber);
-            if (idx >= 0) targetIndex = idx;
-          }
-        }
-
-        musicForceStartFromZero = true;
-        renderSong(targetIndex, false);
-
-        const nowMs = performance.now();
-        musicPositionSec = 0;
-        musicPositionUpdatedAt = nowMs;
-        musicTransportLastTickAt = nowMs;
-        musicRate = 0;
-        musicTracking = false;
-        musicFrozen = true;
-        musicAudioGateOpen = false;
-        musicAtEndAwaitingNext = false;
-        musicManualGlobalSearchUntil = 0;
-        stageManualPaused = false;
-        musicPausedSnapshot = null;
-        liveStartState = "idle";
-        resetAutoSongScan();
-        resetMusicCandidateHistory();
-        resetRelocationConsensus();
-        resetPositionAudit();
-        resetLyricStabilityState(7000);
-        musicLineBias = 0;
-        musicLastAppliedLineIndex = -2;
-        if (lyricLines.length) {
-          focusLineIndex(0, false);
-          virtualPosition = lineDocumentCenter(lyricLines[0]);
-        }
+        musicForceStartFromZero = false;
+        renderSong(currentIndex + delta);
         registerConfirmedSongChange(oldNumber, Number(songs[currentIndex]?.number || 0));
-        updateMusicLabels();
-        updateLiveDisplay();
-        updateSetUi();
-        status.textContent = detectionMode === "set"
-          ? `SET · ${activeRehearsalSet()?.name || "set"} · ${songs[currentIndex].title} en 0:00 · pulsa PLAY.`
-          : `Canción ${songs[currentIndex].title} en 0:00 · pulsa PLAY.`;
       }
 
 
@@ -5920,7 +5869,7 @@ svg {
         prioritySongWinnerNumber=null; prioritySongWinnerVotes=0;
         updateSetUi();
         status.textContent = detectionMode === "set"
-          ? "MODO SET ESTABLE · cambio automático desactivado. Usa SIGUIENTE / ANTERIOR para cambiar de canción sin falsas detecciones."
+          ? "MODO SET · primero confirmaré la siguiente canción probable; si no coincide, buscaré entre las 48."
           : "MODO LIBRE · detector global de 48 canciones.";
       });
       setSelect?.addEventListener("change", () => {
